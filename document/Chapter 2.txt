@@ -1,0 +1,246 @@
+Chapter Two: Requirement Analysis and Specification
+2.1. Introduction of Existing System
+The current process for Ethiopian health researchers to find and access relevant research documents is largely decentralized and manual. The primary platform for discovery is often the Ethiopian Public Health Institute (EPHI) website, which hosts publications in PDF format, typically within a simple directory structure or a basic list. Researchers must rely on manually browsing these lists or using generic website search functions that lack advanced filtering capabilities. Other sources include the institutional repositories of universities, which are often isolated and not interconnected, creating knowledge silos.
+An analysis of the limitations of this existing system using the PIECES framework reveals the following critical problems
+Performance: The system's performance is inadequate for scholarly research. Researchers spend a significant amount of time manually browsing through long, unsorted lists of documents to find relevant work. This lack of a specialized search engine leads to inefficient and time-consuming information retrieval processes.
+Information and Data: The quality and structure of the information are poor. The output is often limited to the document itself, with no consolidated view of an author's entire body of work or an institution's research output. Furthermore, there is no structured data input for authors or institutions, leading to inconsistencies such as varied spellings of an author's name across documents. This results in data redundancy, where the same document might be uploaded to multiple repositories without a central index.
+Economics: The manual effort required from researchers represents a significant hidden cost in terms of time and productivity. The inefficiency of the discovery process directly impacts the pace of research and innovation.
+Control and Security: The existing systems often lack robust administrative controls. There is no centralized mechanism for content management, user role definition, or ensuring data consistency across the national research landscape.
+Efficiency: The process is highly inefficient. Researchers cannot save their search queries to be notified of new, relevant publications. They must repeatedly perform the same manual searches to stay updated in their field.
+Services: The existing system provides a basic document hosting service but fails to offer the value-added services that are standard in modern digital libraries. It lacks features such as personalized dashboards, author profiling, recommendation engines, or institutional analytics that actively aid in knowledge discovery.
+2.2. Proposed System
+Our proposed system is an AI-enhanced, centralized research repository and digital library specifically designed for Ethiopian health research. It will provide a sophisticated, user-centric platform for discovering, managing, and analyzing research documents, directly addressing the limitations identified in the PIECES analysis.
+A fundamental principle of our system is fully open access with no barriers. Unlike existing systems that may require registration or institutional subscriptions, our platform will allow any user to immediately download any research document without any registration or login requirements. This commitment to true open access ensures that Ethiopian research reaches the widest possible audience, including students, policymakers, rural researchers, and the general public who may not have institutional affiliations or email addresses.
+The system will ingest documents from various sources, and by leveraging AI and natural language processing, it will automatically extract and index key metadata, including title, abstract, publication date, author names, and their affiliated institutions. This automated process ensures that the repository's data is structured, consistent, and ready for intelligent analysis.
+The key features of the proposed system include:
+Multi-Institutional Centralization: A unified platform aggregating research from multiple Ethiopian institutions while maintaining institutional identity through dedicated profile pages.
+Open Access: Immediate PDF downloads for all users without any registration requirements
+Advanced Search and Filtering: Users can perform powerful semantic searches and then refine results using multiple filters, including publication date range, author name, institution, and topic.
+Multi-Tier User Management: A comprehensive role-based system with different access levels for researchers, institutional administrators, system administrators, and public users.
+Author and Institution Profiling: Each author's name on a document will be a clickable link leading to a dedicated Author Profile Page. Similarly, institutions will have profile pages showcasing their collective research output.
+Document Submission Workflow: A structured submission process with approval workflows for institutional verification and quality control.
+User Dashboard and Personalization: Registered users will have a personal dashboard with saved searches, alerts for new matching documents, and personalized recommendations.
+Ethiopian Context Intelligence: AI models specifically trained on Ethiopian research corpora for better contextual understanding and relevance.
+2.3. Requirements
+This section formally lists the functional and non-functional requirements of the proposed system. These requirements are derived from the project objectives and define the criteria for a successful implementation.
+
+
+
+
+2.3.1. Functional Requirements
+Functional requirements specify what the system shall do.
+1. Open Access and Public Usage
+The system shall allow any user (authenticated or anonymous) to browse and search all documents
+The system shall allow any user to download full PDF documents immediately without any registration or authentication requirements
+The system shall track download statistics anonymously without requiring user identification
+The system shall provide anonymous usage analytics showing popular documents and search trends
+2.User Management and Authentication (for Contributors)
+The system shall allow new users to register with different roles (Researcher, Institutional Admin, System Admin).
+The system shall require authentication only for content contribution and personalized features, not for access or downloads
+The system shall implement comprehensive role-based access control distinguishing between Public User, Researcher, Institutional Admin, and System Admin.
+3.Document Management
+The system shall allow authenticated Researchers to upload new research documents with institutional affiliation.
+The system shall require Moderator approval for all uploaded documents before public visibility
+The system shall provide Moderators with tools to review documents for quality, appropriateness, and proper categorization
+The system shall allow Moderators to approve, request revisions, or reject uploaded documents
+The system shall notify uploaders of moderation decisions with appropriate feedback
+
+4.Search and Discovery
+The system shall provide semantic search capabilities across all hosted documents.
+The system shall allow users to filter search results by publication date, author, institution, and topic.
+The system shall provide content-based recommendations for related documents using cosine similarity.
+The system shall display download statistics alongside search results to indicate document popularity
+5.Institutional and Author Management
+The system shall allow Institutional Admins to create and manage their institution's profile.
+The system shall automatically generate author profile pages listing all their publications in the system.
+The system shall provide institutional analytics showing research output trends and download statistics
+The system shall allow Institutional Admins to verify documents uploaded by their institution's members
+
+6.Quality Assurance and Moderation
+The system shall implement a moderation queue for newly uploaded documents
+The system shall provide Moderators with tools to check document quality, formatting, and appropriatenes
+The system shall allow Moderators to manage system-wide taxonomies and controlled vocabularies
+The system shall maintain an audit trail of all moderation decision
+
+7.Personalization Features
+The system shall provide registered users with a personalized dashboard.
+The system shall allow users to save search queries with custom names
+The system shall notify registered users via their dashboard when new documents match their saved searches
+The system shall provide document recommendation feeds based on user activity and interests.
+2.3.2. Non-Functional Requirements
+Non-functional requirements specify how the system should perform.
+1.Performance
+The system shall load search results and primary web pages in under 3 seconds under normal load conditions.
+2.Usability
+The user interface shall be intuitive and easy to navigate for users with basic computer literacy, requiring minimal training.
+The system shall provide contextual help and tool-tips for complex features.
+3.Security
+The system shall encrypt user passwords using industry-standard hashing algorithms.
+The system shall implement session management with automatic timeout.
+Role-based access shall be strictly enforced at all access points.
+4.Availability
+The system shall be available 24/7, with acceptable, pre-scheduled downtime for maintenance.
+
+5.Scalability
+The system architecture shall be designed to accommodate a growing number of documents and users without significant performance degradation.
+6.Open Access Compliance
+The system shall clearly communicate the open access policy on all pages
+No barriers (registration, login, payment) shall be required for accessing or downloading content
+Usage statistics shall be publicly available to demonstrate the platform's impact
+2.4. System Models (SRS)
+This section provides a detailed model of the proposed system using standard Unified Modeling Language (UML) diagrams and user interface prototypes. The purpose of these models is to provide a clear and unambiguous specification of the system's requirements, structure, and behavior, serving as a blueprint for the design and implementation phases.
+2.4.1. Use Case Diagram
+The Use Case Diagram provides a high-level overview of the interactions between the system and its external actors. It establishes the functional boundaries of the system by illustrating the core capabilities and which actor is responsible for initiating each function
+Actors:
+1.Public User/Guest: Any user accessing the system without authentication who can:
+Browse all documents and metadata
+Search across the entire repository
+Download any PDF document immediately without registration
+View author and institution profiles
+Use all filtering and sorting options
+2.Registered User/Researcher: Authenticated user who can:
+Everything Public Users can do
+Upload research documents for inclusion in the repository
+Save personalized searches and receive alerts
+Claim authorship of existing documents
+Track their upload history and status
+Receive personalized recommandations
+3.Institutional Administrator: Authenticated user representing an Ethiopian research institution who can:
+Everything Registered Users can do
+Manage their institution's public profile page
+Verify documents uploaded by members of their institution
+View detailed analytics about their institution's research impact
+Manage member affiliations and institutional information
+4.Moderator/Content Manager: System staff responsible for quality assurance who can:
+Review all newly uploaded documents for quality and appropriateness
+Approve, reject, or request revisions on submissions
+Manage system taxonomies and categorization schemes
+Ensure compliance with content guidelines
+Handle copyright and licensing verification
+5.System Administrator: Technical staff with full system control who can:
+Everything Moderators can do
+Manage all user accounts and permissions
+Configure system settings and parameters
+Perform system maintenance and backups
+Monitor system performance and usage statistics
+The primary use cases for the system are:
+For Public Users: Browse Documents, Search Repository, Download PDFs, View Document Details, View Author Profiles, View Institution Profiles
+For Registered Users: All Public User functions plus: Register/Login, Upload Document, Save Search Query, View Personalized Dashboard, Receive Search Alerts, Claim Authorship
+For Institutional Admins: All Registered User functions plus: Manage Institution Profile, Verify Institution Documents, View Institution Analytics, Manage Member Affiliations
+For Moderators: Review Document Submissions, Manage Taxonomies, Ensure Content Quality, Handle Copyright Compliance, Manage Content Guidelines
+For System Admins: All Moderator functions plus: Manage Users, System Configuration, Backup Management, Performance Monitoring
+
+
+2.4.2. Use Case Documentation
+Use Case Documentation provides a detailed, step-by-step description of the interaction between an actor and the system for a specific use case. This clarifies the exact behavior and flow of the system from the user's perspective. Below are documented examples for the key use cases of the system
+Use Case Name	Instant PDF Download Without Registration
+Actor(s)	Public User/Guest
+Description	Allows any user to immediately download any research document without any authentication requirements.
+Pre-conditions	User has internet access and has located a document of interest
+Main Flow	1.User finds document through search, browsing, or direct link.
+2. User clicks the "Download PDF" button.
+3. System immediately serves the PDF file to the browser.
+4. System increments anonymous download counter for the document.
+5. User saves the file locally or opens it directly.
+Alternative Flow	3a. If file is temporarily unavailable, system displays friendly error message with expected restoration time.
+Post-conditions	User has the complete research paper; download statistics are updated.
+
+Table 2.1: Use Case for Anonymous PDF Download (Core Open Access Feature)
+Use Case Name	Document Upload and Moderation Process
+Actor(s)	Researcher, Moderator
+Description	Allows researchers to submit documents that undergo quality review before becoming publicly available.
+Pre-conditions	User is registered and logged in as Researcher
+Main Flow	1. Researcher navigates to upload page.
+2. Researcher fills required information (PDF, title, abstract, authors, optional institution).
+3. System validates and processes document (extracts text, generates metadata).
+4. Document enters "Pending Moderation" queue.
+5. Moderator reviews document for: academic quality, appropriateness, formatting, metadata accuracy.
+6. Moderator takes action:
+a. Approve: Document becomes publicly available for immediate download by anyone.
+b. Request Revisions: Returns to researcher with specific feedback.
+c. Reject: Removes from system with explanation.
+7. Researcher receives notification of decision.
+Post-conditions	Document is either publicly available or returned for revision.
+
+Table 2.2: Document Submission with Moderation Workflow
+Use Case Name	Institutional Document Verification
+Actor(s)	Institutional Administrator
+Description	Allows institutional administrators to verify documents uploaded by members of their institution.
+Pre-conditions	User is logged in as Institutional Admin, Document claims affiliation with their institution
+Main Flow	1. System notifies Institutional Admin of new document claiming their affiliation.
+2. Admin reviews document details and author information.
+3. Admin verifies if author is indeed affiliated with their institution.
+4. Admin takes action:
+a. Verify: Confirms institutional affiliation.
+b. Reject Affiliation: Removes institution claim from document.
+5. Document proceeds to general moderation queue.
+6. Verification status is displayed on document page.
+Post-conditions	Document's institutional affiliation is either verified or removed.
+
+Table 2.3:Institutional Document Verification
+Use Case Name	Systematic Content Moderation
+Actor(s)	Moderator/Content Manager
+Description	Ensures all content meets quality standards before becoming publicly available in the open repository.
+Pre-conditions	User has Moderator role, Documents are in moderation queue
+Main Flow	1. Moderator accesses moderation dashboard.
+2. Views queue of pending documents sorted by submission date.
+3. For each document:
+a. Reviews PDF quality (readability, completeness).
+b. Checks metadata accuracy.
+c. Verifies academic appropriateness (not spam, commercial content, etc.).
+d. Ensures proper categorization and tagging.
+e. Checks for copyright compliance.
+4. Takes moderation action with comments.
+5. System updates document status and notifies uploader.
+Post-conditions	Repository maintains high-quality, appropriate academic content.
+
+Table 2.4: Content Moderation and Quality Control
+Use Case Name:	Save Search Query
+Actor(s):	Researcher
+Description:	Allows a researcher to save the parameters of their current search (keywords and filters) for future use and to receive automated alerts.
+Main Flow:	1. The researcher performs a search with specific keywords and filters.
+2. The researcher clicks the “Save Search” button on the results page.
+3. The system prompts the user to provide a name for the search.
+4. The user provides a name (e.g., “Malaria Research 2020+”) and confirms.
+5. The system validates the input and saves the search query parameters to the user’s profile in the database.
+6. The system displays a confirmation message to the user.
+Post-conditions:	The search query is stored and is visible on the user’s dashboard.
+
+Table 2.5: Use Case for Saving a Search Query
+Use Case Name:	Upload Document
+Actor(s):	Researcher
+Description:	Allows an authenticated researcher to upload a new PDF document, which the system will then automatically process and index.
+Pre-conditions:	The user must be logged into the system.
+Main Flow:	1. The user navigates to the “Upload Document” page.
+2. The system displays a form with fields for file selection and associating an Institution.
+3. The user selects a PDF file from their local machine.
+4. The user selects the affiliated Institution from a pre-populated list.
+5. The user clicks the “Submit” button.
+6. The system validates the file and begins the AI processing pipeline (as shown in the Activity Diagram).
+7. Upon successful processing, the system displays a “Document successfully uploaded” message.
+Alternative Flow:	6a. If the selected file is not a valid PDF, the system displays an error message and the use case ends.
+Post-conditions:	The document is processed, indexed, and is now discoverable via the search functionality.
+
+Table 2.6: Use Case for Uploading a Document
+Use Case Name:	Manage Institutions
+Actor(s):	Administrator
+Description:	Allows an administrator to add, edit, and delete the institution profiles that are available in the system.
+Pre-conditions:	The user must be logged in with the Administrator role.
+Main Flow (Add):	1. The administrator navigates to the “Manage Institutions” dashboard.
+2. The admin clicks the “Add New Institution” button.
+3. The system displays a form with fields for Institution Name and Description.
+4. The admin fills out the form and clicks “Save.”
+5. The system validates the data and adds the new institution to the database.
+Main Flow (Edit):	1. From the institutions list, the admin clicks the “Edit” button next to an institution.
+2. The system displays the form pre-filled with the existing data.
+3. The admin makes the necessary changes and clicks “Save.”
+4. The system updates the record in the database.
+Post-conditions:	The list of institutions in the system is updated.
+
+Table 2.7: Use Case for Managing Institutions
+2.4.3. Activity Diagram
+The Activity Diagram illustrates the workflow and the sequence of actions between the user and the system for a specific process. The diagram below models the workflow for the "Document Upload and AI Processing" scenario, which is a core automated function of the system.
+2.4.4. Sequence Diagram
+The Sequence Diagram shows the time-ordered interaction between system components during a specific operation. The diagram below details the sequence of interactions when a user filters search results by a specific institution, clarifying how backend components collaborate to fulfill the request.
+2.4.5. Class Diagram
+The Class Diagram represents the static structure of the system, detailing the main classes, their attributes, and the relationships between them.

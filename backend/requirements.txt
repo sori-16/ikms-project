@@ -1,0 +1,9 @@
+Flask
+Flask-SQLAlchemy
+psycopg2-binary
+pymupdf
+spacy
+scikit-learn
+elasticsearch
+python-dotenv
+flask-cors

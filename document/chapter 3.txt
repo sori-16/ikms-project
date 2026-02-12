@@ -1,0 +1,162 @@
+Chapter Three: System Design
+3.1. Introduction
+This chapter outlines the high-level design of the Intelligent Knowledge Management System. It serves as the bridge between the requirement analysis phase (Chapter 2) and the future implementation phase. The requirements gathered and the system models specified in the previous chapter are used as the primary input to create a concrete architectural and technical blueprint. This blueprint will guide the development team in constructing a system that is robust, scalable, and fully aligned with the project's objectives, particularly emphasizing the open access model and multi-actor architecture.
+3.2. Purpose of System Design
+The purpose of the system design phase is to produce a detailed and comprehensive plan for building the software. This involves defining the system's architecture, components, modules, interfaces, and data structures. A well-defined design ensures that all components will integrate seamlessly, meet the specified functional and non-functional requirements, and provide a solid foundation for future maintenance and expansion. This design document aims to minimize ambiguity and provide a clear roadmap for the development process, with particular attention to the unique requirements of an open access, multi-institutional research repository.
+3.3. Design Goals
+The design of the system is driven by several key goals, which are derived directly from the non-functional requirements identified in Chapter 2. These principles will guide all architectural and implementation decisions:
+Open Access First: The architecture must prioritize frictionless access to research content. All users, regardless of authentication status, should be able to discover and download research documents with minimal barriers, while maintaining appropriate quality controls through backend moderation workflows.
+Multi-Tenant Scalability: The system must support multiple institutions as distinct tenants within a unified platform. Each institution should have its own identity and administrative controls while sharing common search and discovery infrastructure.
+Maintainability: The system will be built using a modular approach, with a clear separation of concerns. This ensures that the codebase is easy to understand, debug, and update in the future.
+Performance: The system must be responsive and efficient, particularly in its core search and recommendation functionalities. The design will prioritize fast data retrieval and efficient processing pipelines to meet the performance targets defined in the requirements.
+Security: While providing open access, the system must ensure proper access controls for content submission and moderation, protecting intellectual property and maintaining data integrity across institutional boundaries.
+Usability: While primarily a concern of the user interface, the backend design must support a smooth and intuitive user experience. This includes providing fast API responses and consistent data handling.
+3.4. Deployment Diagram
+The deployment diagram illustrates the physical layout of the system's hardware and the distribution of its software components. Our system will be deployed using a scalable cloud infrastructure to ensure high availability and reliability, with particular emphasis on handling the anticipated load from open access downloads.
+The deployment consists of three primary environments:
+Client Environment: Represents the end-user's computing devices including desktops, laptops, and mobile devices running standard web browsers. No specialized software is required beyond a modern web browser with JavaScript support..
+Application Server Environment: Hosted on a cloud virtual private server (VPS) with the following components:
+Web Server (Nginx): Handles HTTP/HTTPS requests, serves static files, and acts as reverse proxy
+Application Server (Gunicorn/Flask): Python-based application server running the core business logic
+Message Queue (Redis): Manages background tasks including document processing and notification delivery
+Background Workers: Separate processes for AI processing and file conversion tasks
+Data Storage Environment: Separated for scalability and performance:
+PostgreSQL Database: The relational database management system for storing structured data.
+PostgreSQL Database: Primary relational database for structured data
+Elasticsearch Cluster: Distributed search engine for document indexing and retrieval
+Object Storage (S3-compatible): For PDF document storage with CDN integration for fast global downloads
+
+3.5. Architectural Design
+To achieve a modular, scalable, and maintainable system, the software will be designed using a classic 3-Tier Architecture. This architectural pattern separates the application into three logical and physical computing tiers. This separation of concerns makes the system easier to develop, test, and update.
+The three tiers are:
+1.Presentation Tier (Frontend):
+This is the user interface and the outermost layer of the application. It is what the end-user directly interacts with. Its primary responsibility is to display information to the user and capture their input.
+Technology: It will be built using standard web technologies: HTML, CSS, and JavaScript.
+Function: It will render the search pages, dashboards, and profile pages. It does not contain any business logic; instead, it communicates with the application tier via a set of well-defined API (Application Programming Interface) calls over HTTP.
+2.Application Tier (Backend / Business Logic):
+This tier is the core of the system; it acts as the "brain" of the application. It is responsible for processing all the business logic and coordinating the application's functions.
+Technology: It will be developed in Python, using a web framework such as Flask or Django.
+Function: Its responsibilities are extensive:
+Handling user authentication and session management.
+Processing all incoming API requests from the presentation tier.
+Executing the document processing pipeline (PDF text extraction, data cleaning).
+Implementing the AI/ML algorithms (TF-IDF, LDA, Cosine Similarity).
+Coordinating data storage and retrieval by sending queries to the data tier.
+3.Data Tier (Storage):
+This tier is responsible for the persistent storage and management of all data. A key design decision for this project is to use a hybrid data storage approach, leveraging two specialized technologies for their respective strengths.
+Technology 1: PostgreSQL Database (for Structured Data): A powerful open-source relational database (RDBMS).
+Function: It will store all structured, relational data. This includes the Users, Institutions, Authors, and SavedSearches tables. It will also store the core metadata for Documents (like title, publication date, and file path) and the relationships between tables (e.g., which document belongs to which institution). Using an RDBMS ensures data integrity and consistency through the use of schemas and foreign keys.
+Technology 2: Elasticsearch (for Unstructured Text Data): A specialized search and analytics engine.
+Function: The full, extracted text from every research paper will be sent to Elasticsearch. Its sole purpose is to index this vast amount of unstructured text to provide extremely fast, powerful, and complex search capabilities (including semantic search and synonym support). Relying on Elasticsearch for search is vastly more efficient and scalable than performing full-text searches on a traditional relational database.
+3.6. User Interface (UI) Design
+The User Interface (UI) is the primary point of interaction for the end-user. The design philosophy is centered around creating a clean, intuitive, and efficient experience that empowers researchers without a steep learning curve. The UI design will be guided by the principles of clarity and focus, ensuring that the most important functionalities are easily accessible. The visual design, as shown in the prototypes in Section 2.4.6, will utilize a professional and modern aesthetic with a consistent color scheme and typography.
+The key pages and their design components are outlined below:
+Search Page: This is the main entry point for discovery. It will feature a prominent search bar as the primary call to action. Below the search bar, advanced filtering options for Institution, Author, and Publication Date Range will be clearly laid out. This design allows for both simple keyword searches and more complex, faceted queries to be initiated with ease.
+Search Results Page: This page is designed for clarity and scannability. Each result will be displayed in a well-defined card, presenting the document's title, authors, institution, and publication date. A "View Details" link will navigate the user to the full document page. The filters used for the search will be clearly displayed, and users will have the option to modify or clear them to perform a new search.
+Researcher Dashboard: This is the personalized hub for each registered user. The design will focus on delivering relevant information at a glance. It will feature two main sections:
+Saved Searches: A list of the user's saved queries, each with a notification count indicating the number of new matching documents that have been added.
+Alerts: A chronological feed of new documents that match any of the user's saved searches, providing direct links to these new discoveries.
+Profile Pages (Author & Institution): These pages will act as centralized information hubs. They will have a consistent layout, featuring the name of the author or institution at the top, followed by a list of all associated research documents available in the system. This design allows users to easily explore the entire body of work related to a specific person or organization.
+3.7. Database Design
+The database is the foundation of the system, responsible for storing all structured data in a reliable and consistent manner. The design is a direct implementation of the Class Diagram specified in Section 2.4.5. A relational database model using PostgreSQL was chosen to enforce data integrity through schemas, primary keys, and foreign key constraints.
+The database will consist of the following primary tables:
+Name	Data Type	Constraints	Description
+userId	SERIAL	PRIMARY KEY	Unique identifier for the user.
+name	VARCHAR(255)	NOT NULL	Full name of the user.
+email	VARCHAR(255)	NOT NULL, UNIQUE	User's email, used for login.
+passwordHash	VARCHAR(255)	NOT NULL	The securely hashed user password.
+role	VARCHAR(50)	NOT NULL	User's role (e.g., 'Researcher', 'Administrator').
+
+Table 3.1: Users Table Schema
+Name	Data Type	Constraints	Description
+institutionId	SERIAL	PRIMARY KEY	Unique identifier for the institution.
+name	VARCHAR(255)	NOT NULL, UNIQUE	Official name of the institution.
+description	TEXT		A brief description of the institution.
+
+Table 3.2: Institutions Table Schema
+
+
+Name	Data Type	Constraints	Description
+authorId	SERIAL	PRIMARY KEY	Unique identifier for the author.
+name	VARCHAR(255)	NOT NULL, UNIQUE	Full name of the author.
+
+Table 3.3: Authors Table Schema
+Name	Data Type	Constraints	Description
+docId	SERIAL	PRIMARY KEY	Unique identifier for the document.
+title	TEXT	NOT NULL	The title of the research paper.
+abstract	TEXT		The abstract of the paper.
+publicationDate	DATE		The date of publication.
+filePath	VARCHAR(255)	NOT NULL	Server path to the stored PDF file.
+uploaderId	INTEGER	FOREIGN KEY (Users.userId)	ID of the user who uploaded it.
+institutionId	INTEGER	FOREIGN KEY (Institutions.institutionId)	The affiliated institution.
+downloadCount	INTEGER	DEFAULT 0	Number of times downloaded
+status	VARCHAR(20)	DEFAULT 'Pending'	Moderation status ('Pending', 'Approved', 'Rejected')
+
+Table 3.4: Documents Table Schema
+
+
+Name	Data Type	Constraints	Description
+docId	INTEGER	FOREIGN KEY (Documents.docId), PRIMARY KEY	Part of the composite primary key.
+authorId	INTEGER	FOREIGN KEY (Authors.authorId), PRIMARY KEY	Part of the composite primary key.
+
+Table 3.5: Document_Authors Table Schema (Linking Table)
+Name	Data Type	Constraints	Description
+searchId	SERIAL	PRIMARY KEY	Unique identifier for the saved search.
+userId	INTEGER	FOREIGN KEY (Users.userId)	The user who saved the search.
+searchName	VARCHAR(255)	NOT NULL	A user-defined name for the search.
+queryParams	JSONB	NOT NULL	The search parameters
+
+Table 3.6: SavedSearches Table Schema
+Name	Data Type	Constraints	Description
+queueId	SERIAL	PRIMARY KEY	Unique identifier for the moderation entry
+docId	INTEGER	FOREIGN KEY (Documents.docId)	The document to be moderated
+moderatorId	INTEGER	FOREIGN KEY (Users.userId)	The moderator assigned
+status	VARCHAR(20)	DEFAULT 'Pending'	Current status ('Pending', 'Reviewed')
+ notes	TEXT		Moderator's comments
+Table 3.7: ModerationQueue Table Schema
+Name	Data Type	Constraints	Description
+logId	SERIAL	PRIMARY KEY	Unique identifier for the download log
+docId	INTEGER	FOREIGN KEY (Documents.docId)	The downloaded document
+downloadDate	TIMESTAMP	DEFAULT CURRENT_TIMESTAMP	Date and time of download
+ipAddress	VARCHAR(45)		IP address of downloader
+
+Table 3.8: DownloadLogs Table Schema
+
+3.8. Machine Learning Algorithm Design
+The core intelligence of the system lies in its ability to automatically process and understand the content of uploaded research documents. This is achieved through a well-defined pipeline of Natural Language Processing (NLP) and machine learning techniques. The pipeline is designed to transform unstructured text from a PDF into structured, searchable, and analyzable data.
+The pipeline consists of the following sequential steps, which are executed every time a new document is uploaded:
+1.PDF Text Extraction:
+Purpose: To extract the raw textual content from the uploaded PDF file.
+Tool: A Python library such as PyMuPDF or pdfplumber will be used.
+Process: The library will open the PDF file and iterate through its pages, extracting all text blocks. The extracted text from all pages will be concatenated into a single string for further processing.
+2.Text Preprocessing and Cleaning:
+Purpose: To clean the raw text and prepare it for accurate machine learning analysis. This step is crucial for reducing noise and improving the quality of the results.
+Process: The following sub-steps will be performed:
+Lowercasing: All text will be converted to lowercase to ensure uniformity (e.g., "Health" and "health" are treated as the same word).
+Punctuation Removal: All punctuation marks (e.g., commas, periods, hyphens) will be removed.
+Stopword Removal: Common, low-value words (known as stopwords, e.g., 'the', 'is', 'a', 'an', 'in') will be removed from the text. A standard English stopword list from a library like NLTK or spaCy will be used.
+3.Keyword and Tag Generation (TF-IDF):
+Purpose: To automatically identify the most significant keywords or "tags" for a document.
+Algorithm: Term Frequency-Inverse Document Frequency (TF-IDF).
+Process: TF-IDF will be used to calculate a score for each word in the document. This score reflects how important a word is to that specific document in the context of the entire collection of documents. Words with the highest TF-IDF scores (e.g., "malaria," "placenta," "kinetics") will be selected and stored as the document's primary keywords. These keywords are also used as the basis for the recommendation system.
+4.Topic Modeling (LDA):
+Purpose: To automatically categorize each document into a set of high-level topics.
+Algorithm: Latent Dirichlet Allocation (LDA).
+Process: The LDA model will be trained on the entire corpus of preprocessed text from all documents. It will analyze the patterns of co-occurring words to discover a set of abstract "topics" (e.g., one topic might be characterized by words like "virus," "vaccine," "infection," while another might be "data," "model," "statistics"). Each document is then assigned a probability distribution across these topics, allowing the system to classify it under its most likely category.
+5.Content-Based Recommendation (Cosine Similarity)
+Purpose: To recommend other relevant documents to a user who is viewing a specific paper.
+Algorithm: Cosine Similarity.
+Process: The recommendation engine will use the TF-IDF vectors generated in Step 3. Each document is represented as a vector in a high-dimensional space. To find documents similar to a given document, the system will calculate the cosine of the angle between its vector and the vectors of all other documents in the repository. A cosine value close to 1 indicates a very high similarity. The top N documents with the highest similarity scores will be presented to the user as "Related Articles."
+
+
+3.9. Summary
+This chapter presented the comprehensive design blueprint for the Intelligent Knowledge Management System (IKMS), bridging the gap between requirement analysis and future implementation. The design is grounded in a clear architectural vision, ensuring the system is both scalable and aligned with the core objectives of open access and intelligent discovery.
+A three-tier architecture was adopted to separate concerns across presentation, application, and data layers, promoting maintainability and scalability. The system will be deployed on a robust cloud infrastructure to ensure high availability and performance, particularly under the demands of open access document retrieval.
+The User Interface design prioritizes usability and clarity, with intuitive layouts for search, discovery, and user dashboards—ensuring researchers can navigate the system with minimal learning effort.
+At the data layer, a PostgreSQL relational database was designed to enforce integrity and manage structured metadata, while Elasticsearch was integrated to deliver fast, semantic search capabilities across unstructured text.
+Central to the system’s intelligence is the machine learning pipeline, which automates document processing through:
+PDF text extraction and cleaning
+TF-IDF for keyword tagging
+LDA for topic modeling
+Cosine similarity for content-based recommendations
+Together, these components form a cohesive and forward-looking design that not only meets the specified functional and non-functional requirements but also establishes a strong foundation for future enhancements and real-world deployment within the Ethiopian research ecosystem.
