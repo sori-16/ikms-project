@@ -43,6 +43,10 @@ def create_app():
     
     db.init_app(app)
     
+    # Create tables
+    with app.app_context():
+        db.create_all()
+    
     @app.route('/')
     def index():
         return "IKMS Backend is running!"
@@ -194,34 +198,32 @@ def create_app():
     @app.route('/search', methods=['GET'])
     def search_documents():
         query = request.args.get('q', '')
+        
         if not query:
             return jsonify([])
-
-        results = []
         
-        # 1. Try Elasticsearch
+        # 1. Try Elasticsearch first
         if es.ping():
             try:
-                es_body = {
-                    "query": {
-                        "multi_match": {
-                            "query": query,
-                            "fields": ["title", "abstract", "full_text", "keywords", "topics"]
+                result = es.search(
+                    index=INDEX_NAME,
+                    body={
+                        "query": {
+                            "multi_match": {
+                                "query": query,
+                                "fields": ["title", "abstract", "full_text"]
+                            }
                         }
                     }
-                }
-                res = es.search(index=INDEX_NAME, body=es_body)
-                hits = res['hits']['hits']
-                # Map back to DB objects or return direct ES fields
-                # For simplicity, returning ES fields mixed with DB IDs if possible
-                # But here we just return the hits
+                )
+                
+                hits = result['hits']['hits']
                 results = [{
                     "source": "elasticsearch",
-                    "score": hit['_score'],
-                    "title": hit['_source']['title'],
-                    "abstract": hit['_source']['abstract'],
-                    "keywords": hit['_source'].get('keywords', [])
+                    "id": hit['_id'],
+                    **hit['_source']
                 } for hit in hits]
+                
                 return jsonify(results)
             except Exception as e:
                 print(f"ES Search failed: {e}. Falling back to DB.")
@@ -250,48 +252,57 @@ def create_app():
 
     @app.route('/recommend/<int:doc_id>', methods=['GET'])
     def recommend_documents(doc_id):
-        from ml_engine import find_recommendations # Local import to avoid circular dependency if any
-        
-        target_doc = Document.query.get(doc_id)
-        if not target_doc:
-            return jsonify({"error": "Document not found"}), 404
-            
-        # Get extracted text for this doc (re-extracting or assuming we saved it?)
-        # For this prototype Phase 2, we didn't strictly save "cleaned_text" in DB, only in ES.
-        # But we verified saving file_path. We can re-extract or assume we rely on file content.
-        # Ideally we validly storing full_text in DB for this Recommendation feature if ES is optional.
-        # Let's re-extract since we have the file path and utils. 
-        # OPTIMIZATION: In Phase 4, add a text column to Document table.
-        
         try:
-            target_text = extract_text_from_pdf(target_doc.file_path)
-            target_cleaned = clean_text(target_text)
+            # 1. Get the target document
+            target_doc = Document.query.get(doc_id)
+            if not target_doc:
+                return jsonify({"error": "Document not found"}), 404
             
-            # Fetch all other docs
-            all_docs = Document.query.filter(Document.id != doc_id).all()
-            all_docs_data = []
+            # 2. Get all documents
+            all_docs = Document.query.all()
             
-            for d in all_docs:
-                # Expensive operation for prototype: Read every PDF
-                # In real world: Store vectors or text in DB.
-                # Since we don't have text col yet, we read file.
-                # Warning: Slow for many files.
-                d_text = extract_text_from_pdf(d.file_path)
-                d_cleaned = clean_text(d_text)
-                all_docs_data.append({'id': d.id, 'text': d_cleaned})
+            if len(all_docs) < 2:
+                return jsonify([])  # Not enough documents to recommend
             
-            # Find similar
-            recommended_ids = find_recommendations(target_cleaned, all_docs_data)
+            # 3. Extract text for all documents
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.metrics.pairwise import cosine_similarity
             
-            # Fetch details
+            doc_texts = []
+            doc_ids = []
+            
+            for doc in all_docs:
+                try:
+                    text = extract_text_from_pdf(doc.file_path)
+                    cleaned = clean_text(text)
+                    doc_texts.append(cleaned)
+                    doc_ids.append(doc.id)
+                except:
+                    # Skip documents that can't be read
+                    continue
+            
+            # 4. Vectorize and calculate similarity
+            vectorizer = TfidfVectorizer(max_features=100)
+            tfidf_matrix = vectorizer.fit_transform(doc_texts)
+            
+            # Find index of target document
+            target_idx = doc_ids.index(doc_id)
+            
+            # Calculate cosine similarity
+            similarities = cosine_similarity(tfidf_matrix[target_idx:target_idx+1], tfidf_matrix).flatten()
+            
+            # Get top 5 similar documents (excluding the target itself)
+            similar_indices = similarities.argsort()[-6:-1][::-1]
+            
             recommendations = []
-            for rid in recommended_ids:
-                d = Document.query.get(rid)
-                if d:
+            for idx in similar_indices:
+                if doc_ids[idx] != doc_id:  # Exclude the target document
+                    doc = Document.query.get(doc_ids[idx])
                     recommendations.append({
-                        "id": d.id,
-                        "title": d.title,
-                        "abstract": d.abstract
+                        "id": doc.id,
+                        "title": doc.title,
+                        "abstract": doc.abstract,
+                        "similarity_score": float(similarities[idx])
                     })
             
             return jsonify(recommendations)
@@ -449,3 +460,9 @@ def create_app():
         }), 200
 
     return app
+
+if __name__ == '__main__':
+    app = create_app()
+    print("Starting IKMS Backend Server...")
+    print("Server running on http://localhost:5000")
+    app.run(debug=True, host='0.0.0.0', port=5000)

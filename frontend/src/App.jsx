@@ -1,35 +1,66 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+// Created by: Soreti (Team Leader) - Demo Implementation
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { isAuthenticated, getUserRole } from './utils/auth';
+import Navbar from './components/Navbar';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import SearchPage from './pages/SearchPage';
+import DocumentDetail from './pages/DocumentDetail';
+import ResearcherDashboard from './pages/ResearcherDashboard';
+import ModeratorDashboard from './pages/ModeratorDashboard';
+import './App.css';
 
-function App() {
-  const [count, setCount] = useState(0)
+// Protected Route Component
+function ProtectedRoute({ children, allowedRoles }) {
+  if (!isAuthenticated()) {
+    return <Navigate to="/login" replace />;
+  }
 
-  return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+  const userRole = getUserRole();
+  if (allowedRoles && !allowedRoles.includes(userRole)) {
+    return <Navigate to="/researcher-dashboard" replace />;
+  }
+
+  return children;
 }
 
-export default App
+function App() {
+  return (
+    <Router>
+      <div className="app-container">
+        <Navbar />
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/" element={<SearchPage />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="/document/:id" element={<DocumentDetail />} />
+
+          {/* Protected Routes */}
+          <Route
+            path="/researcher-dashboard"
+            element={
+              <ProtectedRoute>
+                <ResearcherDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/moderator-dashboard"
+            element={
+              <ProtectedRoute allowedRoles={['moderator', 'sys_admin']}>
+                <ModeratorDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
+    </Router>
+  );
+}
+
+export default App;

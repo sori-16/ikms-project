@@ -1,0 +1,97 @@
+/* Created by: Soreti (Team Leader) - Demo Implementation */
+/* Navbar Styling */
+.navbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    padding: 1rem 0;
+    margin-bottom: 2rem;
+    backdrop-filter: blur(20px);
+}
+
+.navbar-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.navbar-brand {
+    font-size: 1.5rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-decoration: none;
+    transition: transform 0.3s ease;
+}
+
+.navbar-brand:hover {
+    transform: scale(1.05);
+}
+
+.navbar-links {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.nav-link {
+    color: var(--text-primary);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s ease;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    font-family: inherit;
+}
+
+.nav-link:hover {
+    color: var(--accent-primary);
+}
+
+.nav-user {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.btn-primary-small {
+    padding: 0.5rem 1rem;
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    border-radius: 8px;
+    color: white;
+    font-weight: 600;
+}
+
+.btn-primary-small:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+
+.btn-logout {
+    padding: 0.5rem 1rem;
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+    color: #ef4444;
+}
+
+.btn-logout:hover {
+    background: rgba(239, 68, 68, 0.3);
+}
+
+@media (max-width: 768px) {
+    .navbar-links {
+        gap: 1rem;
+        font-size: 0.9rem;
+    }
+
+    .nav-user {
+        display: none;
+    }
+}
