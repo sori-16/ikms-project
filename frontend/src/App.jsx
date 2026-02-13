@@ -8,6 +8,8 @@ import SearchPage from './pages/SearchPage';
 import DocumentDetail from './pages/DocumentDetail';
 import ResearcherDashboard from './pages/ResearcherDashboard';
 import ModeratorDashboard from './pages/ModeratorDashboard';
+import InstitutionList from './pages/InstitutionList';
+import InstitutionProfile from './pages/InstitutionProfile';
 import './App.css';
 
 // Protected Route Component
@@ -36,6 +38,8 @@ function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/document/:id" element={<DocumentDetail />} />
+          <Route path="/institutions" element={<InstitutionList />} />
+          <Route path="/institution/:id" element={<InstitutionProfile />} />
 
           {/* Protected Routes */}
           <Route
