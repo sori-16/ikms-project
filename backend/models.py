@@ -1,7 +1,34 @@
+"""
+IKMS Database Models
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+
+Defines:
+- User (with RBAC roles)
+- Institution
+- Author
+- Document (with workflow status)
+- SavedSearch
+"""
+
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import enum
 
 db = SQLAlchemy()
+
+# Enums for RBAC and Workflow
+class UserRole(enum.Enum):
+    PUBLIC = 'public'
+    RESEARCHER = 'researcher'
+    INST_ADMIN = 'inst_admin'
+    MODERATOR = 'moderator'
+    SYS_ADMIN = 'sys_admin'
+
+class DocumentStatus(enum.Enum):
+    PENDING = 'pending'
+    APPROVED = 'approved'
+    REJECTED = 'rejected'
 
 # Association Table for Many-to-Many relationship between Documents and Authors
 document_authors = db.Table('document_authors',
@@ -12,10 +39,11 @@ document_authors = db.Table('document_authors',
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    role = db.Column(db.String(50), default='Researcher') # Researcher/Admin
+    name = db.Column(db.String(255), nullable=False)
+    email = db.Column(db.String(255), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.Enum(UserRole), nullable=False, default=UserRole.RESEARCHER)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     saved_searches = db.relationship('SavedSearch', backref='user', lazy=True)
 
@@ -40,12 +68,15 @@ class Author(db.Model):
 class Document(db.Model):
     __tablename__ = 'documents'
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(300), nullable=False)
+    title = db.Column(db.Text, nullable=False)
     abstract = db.Column(db.Text)
-    file_path = db.Column(db.String(500), nullable=False)
     publication_date = db.Column(db.Date)
+    file_path = db.Column(db.String(255), nullable=False)
     upload_date = db.Column(db.DateTime, default=datetime.utcnow)
     institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'))
+    uploader_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    status = db.Column(db.Enum(DocumentStatus), nullable=False, default=DocumentStatus.PENDING)
+    download_count = db.Column(db.Integer, default=0)
     
     authors = db.relationship('Author', secondary=document_authors, lazy='subquery',
         backref=db.backref('documents', lazy=True))

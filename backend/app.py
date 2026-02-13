@@ -1,11 +1,25 @@
+"""
+IKMS Backend - Main Application
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+
+This file contains:
+- Authentication endpoints (register, login)
+- Document upload and processing
+- Search and recommendation APIs
+- Moderation workflow
+- Institution management
+"""
+
 import os
 import json
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-from models import db, Document, Institution, Author
+from models import db, Document, Institution, Author, User, UserRole, DocumentStatus
 from utils import extract_text_from_pdf, clean_text
 from ml_engine import extract_keywords, assign_topics
+from auth import hash_password, check_password, generate_token, login_required, role_required
 from elasticsearch import Elasticsearch
 
 # Configure Elasticsearch
@@ -32,6 +46,81 @@ def create_app():
     @app.route('/')
     def index():
         return "IKMS Backend is running!"
+
+    # ========== AUTH ENDPOINTS ==========
+    @app.route('/register', methods=['POST'])
+    def register():
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data or not data.get('email') or not data.get('password') or not data.get('name'):
+            return jsonify({"error": "Missing required fields"}), 400
+        
+        # Check if user already exists
+        existing_user = User.query.filter_by(email=data['email']).first()
+        if existing_user:
+            return jsonify({"error": "User already exists"}), 409
+        
+        # Determine role (default to RESEARCHER if not specified)
+        role_str = data.get('role', 'researcher').lower()
+        role_map = {
+            'researcher': UserRole.RESEARCHER,
+            'inst_admin': UserRole.INST_ADMIN,
+            'moderator': UserRole.MODERATOR,
+            'sys_admin': UserRole.SYS_ADMIN
+        }
+        role = role_map.get(role_str, UserRole.RESEARCHER)
+        
+        # Create new user
+        new_user = User(
+            name=data['name'],
+            email=data['email'],
+            password_hash=hash_password(data['password']),
+            role=role
+        )
+        
+        db.session.add(new_user)
+        db.session.commit()
+        
+        # Generate token
+        token = generate_token(new_user.id, new_user.role.value)
+        
+        return jsonify({
+            "message": "User registered successfully",
+            "user": {
+                "id": new_user.id,
+                "name": new_user.name,
+                "email": new_user.email,
+                "role": new_user.role.value
+            },
+            "token": token
+        }), 201
+
+    @app.route('/login', methods=['POST'])
+    def login():
+        data = request.get_json()
+        
+        if not data or not data.get('email') or not data.get('password'):
+            return jsonify({"error": "Missing email or password"}), 400
+        
+        # Find user
+        user = User.query.filter_by(email=data['email']).first()
+        if not user or not check_password(data['password'], user.password_hash):
+            return jsonify({"error": "Invalid credentials"}), 401
+        
+        # Generate token
+        token = generate_token(user.id, user.role.value)
+        
+        return jsonify({
+            "message": "Login successful",
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "role": user.role.value
+            },
+            "token": token
+        }), 200
 
     @app.route('/upload', methods=['POST'])
     def upload_file():
@@ -60,14 +149,17 @@ def create_app():
                 topics = assign_topics(cleaned_text)
                 
                 # 5. Save to Postgres
-                # Check for existing institution (mocking ID 1 or creating new if passed)
-                # For Phase 2, we'll just link to a dummy institution or None
+                # Get institution_id from form data (if provided)
+                institution_id = request.form.get('institution_id')
+                uploader_id = request.form.get('uploader_id')  # Can be extracted from JWT in future
                 
                 new_doc = Document(
                     title=filename, # Using filename as title for now
                     abstract=raw_text[:500] if raw_text else "",
                     file_path=filepath,
-                    institution_id=None # To be refined in later phases
+                    institution_id=int(institution_id) if institution_id else None,
+                    uploader_id=int(uploader_id) if uploader_id else None,
+                    status=DocumentStatus.PENDING  # All uploads start as pending
                 )
                 db.session.add(new_doc)
                 db.session.commit()
@@ -134,11 +226,12 @@ def create_app():
             except Exception as e:
                 print(f"ES Search failed: {e}. Falling back to DB.")
         
-    # 2. Fallback to Database (Simple LIKE match)
+        # 2. Fallback to Database (Simple LIKE match)
         print("Using Database Fallback Search")
         from sqlalchemy import or_
-        # Search title matches OR abstract matches
+        # Search title matches OR abstract matches - ONLY APPROVED DOCUMENTS
         db_results = Document.query.filter(
+            Document.status == DocumentStatus.APPROVED,
             or_(
                 Document.title.ilike(f'%{query}%'),
                 Document.abstract.ilike(f'%{query}%')
@@ -205,5 +298,154 @@ def create_app():
             
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
+    # ========== MODERATION WORKFLOW ENDPOINTS ==========
+    @app.route('/documents/pending', methods=['GET'])
+    @role_required('moderator', 'sys_admin')
+    def get_pending_documents():
+        """Get all documents pending moderation"""
+        pending_docs = Document.query.filter_by(status=DocumentStatus.PENDING).all()
+        
+        results = [{
+            "id": doc.id,
+            "title": doc.title,
+            "abstract": doc.abstract,
+            "upload_date": doc.upload_date.isoformat() if doc.upload_date else None,
+            "uploader_id": doc.uploader_id
+        } for doc in pending_docs]
+        
+        return jsonify(results), 200
+
+    @app.route('/documents/<int:doc_id>/status', methods=['PUT'])
+    @role_required('moderator', 'sys_admin')
+    def update_document_status(doc_id):
+        """Approve or reject a document"""
+        data = request.get_json()
+        
+        if not data or 'status' not in data:
+            return jsonify({"error": "Status is required"}), 400
+        
+        # Validate status
+        status_str = data['status'].lower()
+        if status_str not in ['approved', 'rejected']:
+            return jsonify({"error": "Status must be 'approved' or 'rejected'"}), 400
+        
+        # Find document
+        document = Document.query.get(doc_id)
+        if not document:
+            return jsonify({"error": "Document not found"}), 404
+        
+        # Update status
+        document.status = DocumentStatus.APPROVED if status_str == 'approved' else DocumentStatus.REJECTED
+        db.session.commit()
+        
+        return jsonify({
+            "message": f"Document {status_str}",
+            "document_id": doc_id,
+            "status": document.status.value
+        }), 200
+
+    # ========== INSTITUTION MANAGEMENT ENDPOINTS ==========
+    @app.route('/institutions', methods=['GET'])
+    def get_institutions():
+        """Get all institutions (public endpoint)"""
+        institutions = Institution.query.all()
+        
+        results = [{
+            "id": inst.id,
+            "name": inst.name,
+            "description": inst.description,
+            "location": inst.location
+        } for inst in institutions]
+        
+        return jsonify(results), 200
+
+    @app.route('/institutions', methods=['POST'])
+    @role_required('inst_admin', 'sys_admin')
+    def create_institution():
+        """Create a new institution (Admin only)"""
+        data = request.get_json()
+        
+        if not data or not data.get('name'):
+            return jsonify({"error": "Institution name is required"}), 400
+        
+        # Check if institution already exists
+        existing = Institution.query.filter_by(name=data['name']).first()
+        if existing:
+            return jsonify({"error": "Institution already exists"}), 409
+        
+        new_institution = Institution(
+            name=data['name'],
+            description=data.get('description', ''),
+            location=data.get('location', '')
+        )
+        
+        db.session.add(new_institution)
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Institution created successfully",
+            "institution": {
+                "id": new_institution.id,
+                "name": new_institution.name,
+                "description": new_institution.description,
+                "location": new_institution.location
+            }
+        }), 201
+
+    @app.route('/institutions/<int:inst_id>', methods=['GET'])
+    def get_institution(inst_id):
+        """Get a specific institution with its documents"""
+        institution = Institution.query.get(inst_id)
+        if not institution:
+            return jsonify({"error": "Institution not found"}), 404
+        
+        # Get all approved documents from this institution
+        documents = Document.query.filter_by(
+            institution_id=inst_id,
+            status=DocumentStatus.APPROVED
+        ).all()
+        
+        return jsonify({
+            "id": institution.id,
+            "name": institution.name,
+            "description": institution.description,
+            "location": institution.location,
+            "documents": [{
+                "id": doc.id,
+                "title": doc.title,
+                "abstract": doc.abstract,
+                "publication_date": doc.publication_date.isoformat() if doc.publication_date else None
+            } for doc in documents]
+        }), 200
+
+    @app.route('/institutions/<int:inst_id>', methods=['PUT'])
+    @role_required('inst_admin', 'sys_admin')
+    def update_institution(inst_id):
+        """Update institution details (Admin only)"""
+        institution = Institution.query.get(inst_id)
+        if not institution:
+            return jsonify({"error": "Institution not found"}), 404
+        
+        data = request.get_json()
+        
+        if data.get('name'):
+            institution.name = data['name']
+        if data.get('description'):
+            institution.description = data['description']
+        if data.get('location'):
+            institution.location = data['location']
+        
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Institution updated successfully",
+            "institution": {
+                "id": institution.id,
+                "name": institution.name,
+                "description": institution.description,
+                "location": institution.location
+            }
+        }), 200
 
     return app

@@ -1,3 +1,14 @@
+"""
+IKMS Machine Learning Engine
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+
+ML Functions:
+- extract_keywords: TF-IDF keyword extraction
+- assign_topics: LDA topic modeling
+- get_recommendations: Content-based similarity (Cosine)
+"""
+
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.metrics.pairwise import cosine_similarity

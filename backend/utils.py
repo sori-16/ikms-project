@@ -1,6 +1,16 @@
+"""
+IKMS Utility Functions
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+
+Functions:
+- extract_text_from_pdf: Extract text from PDF files
+- clean_text: Preprocess text (lowercase, remove stopwords)
+"""
+
 import fitz  # PyMuPDF
 import spacy
-import re
+import string
 import os
 
 # Load English tokenizer, tagger, parser and NER
