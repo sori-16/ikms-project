@@ -70,19 +70,28 @@ function SearchPage() {
                 </p>
 
                 {/* Search Bar in Hero */}
-                <form onSubmit={handleSearch} className="search-bar-container" style={{ maxWidth: '600px', margin: '0 auto' }}>
+                <form onSubmit={handleSearch} className="search-bar-container" style={{ maxWidth: '600px', margin: '0 auto', position: 'relative' }}>
+                    <Search className="search-icon-inside" size={20} style={{ position: 'absolute', left: '1.2rem', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
                     <input
                         type="text"
                         placeholder="Search for research topics..."
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         className="search-input"
-                        style={{ width: '100%', padding: '1rem', borderRadius: '50px', border: 'none', fontSize: '1.2rem' }}
+                        style={{ width: '100%', padding: '1.25rem 1.25rem 1.25rem 3.5rem', borderRadius: '50px', border: '1px solid rgba(255,255,255,0.1)', fontSize: '1.1rem', background: 'rgba(0,0,0,0.3)', color: 'white' }}
                     />
-                    <button type="submit" className="search-button" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'var(--accent-primary)', border: 'none', color: 'white', padding: '0.5rem 1.5rem', borderRadius: '30px', cursor: 'pointer' }}>
+                    <button type="submit" className="search-button" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'var(--accent-primary)', border: 'none', color: 'white', padding: '0.6rem 1.5rem', borderRadius: '30px', cursor: 'pointer', fontWeight: '600' }}>
                         Search
                     </button>
                 </form>
+
+                <div className="trending-container">
+                    <span className="trending-label">Trending:</span>
+                    <button onClick={() => setQuery('AI in Healthcare')} className="trending-tag">#AI-Health</button>
+                    <button onClick={() => setQuery('Sustainable Agriculture')} className="trending-tag">#SustainableAgri</button>
+                    <button onClick={() => setQuery('Ethereum Blockchain')} className="trending-tag">#Blockchain</button>
+                    <button onClick={() => setQuery('Public Health Policy')} className="trending-tag">#PublicHealth</button>
+                </div>
 
                 <div className="hero-stats">
                     <div className="stat-item">
@@ -97,6 +106,13 @@ function SearchPage() {
             </div>
 
             {/* Main Content Area */}
+            <div className="search-header" style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                <h1 style={{ background: 'linear-gradient(to right, #6366f1, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontSize: '3.5rem', fontWeight: '800', marginBottom: '0.5rem' }}>
+                    National Knowledge Portal
+                </h1>
+                <p style={{ fontSize: '1.2rem', opacity: 0.8 }}>የኢትዮጵያ ብሔራዊ የእውቀት እና የመረጃ አያያዝ ሥርዓት</p>
+            </div>
+
             <div className="search-layout">
 
                 {/* Sidebar Filters */}

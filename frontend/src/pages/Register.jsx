@@ -60,9 +60,12 @@ function Register() {
 
     return (
         <div className="auth-container">
-            <div className="auth-card glass-panel">
+            <div className="auth-card">
+                <div className="auth-brand">
+                    <span className="auth-logo">✦ IKMS</span>
+                </div>
                 <h1 className="auth-title">Create Account</h1>
-                <p className="auth-subtitle">Join the IKMS research community</p>
+                <p className="auth-subtitle">Join Ethiopia's national research community</p>
 
                 {error && <div className="error-message">{error}</div>}
 
@@ -76,13 +79,12 @@ function Register() {
                             value={formData.name}
                             onChange={handleChange}
                             required
-                            className="glass-input"
-                            placeholder="John Doe"
+                            placeholder="Dr. Abebe Bikila"
                         />
                     </div>
 
                     <div className="form-group">
-                        <label htmlFor="email">Email</label>
+                        <label htmlFor="email">Email address</label>
                         <input
                             type="email"
                             id="email"
@@ -90,8 +92,7 @@ function Register() {
                             value={formData.email}
                             onChange={handleChange}
                             required
-                            className="glass-input"
-                            placeholder="john@example.com"
+                            placeholder="you@institution.edu.et"
                         />
                     </div>
 
@@ -105,7 +106,6 @@ function Register() {
                             onChange={handleChange}
                             required
                             minLength="6"
-                            className="glass-input"
                             placeholder="At least 6 characters"
                         />
                     </div>
@@ -119,7 +119,6 @@ function Register() {
                             value={formData.confirmPassword}
                             onChange={handleChange}
                             required
-                            className="glass-input"
                             placeholder="Re-enter password"
                         />
                     </div>
@@ -131,7 +130,7 @@ function Register() {
                             name="role"
                             value={formData.role}
                             onChange={handleChange}
-                            className="glass-input"
+                            className="input-field"
                         >
                             <option value="researcher">Researcher</option>
                             <option value="moderator">Moderator</option>
@@ -141,10 +140,10 @@ function Register() {
 
                     <button
                         type="submit"
-                        className="btn-primary"
+                        className="btn-auth"
                         disabled={loading}
                     >
-                        {loading ? 'Creating account...' : 'Create Account'}
+                        {loading ? 'Creating account...' : 'Create Account →'}
                     </button>
                 </form>
 

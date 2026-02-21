@@ -1,102 +1,243 @@
-/* Created by: Soreti (Team Leader) - Demo Implementation */
-/* Analytics Dashboard Styling */
+/* ──────────────────────────────────────────────
+   IKMS – Analytics Dashboard
+   ────────────────────────────────────────────── */
 
 .analytics-container {
-  padding: 2rem 0;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
 }
 
+.analytics-page-header {
+  margin-bottom: 3rem;
+  text-align: center;
+}
+
+.analytics-page-header h1 {
+  font-size: 2.4rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, #fff 30%, var(--accent-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.5rem;
+}
+
+.analytics-page-header p {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* ── Stats Grid ── */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 2rem;
-  margin-bottom: 3rem;
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
 }
 
 .stat-card {
   padding: 2rem;
   text-align: center;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  transition: transform 0.3s ease;
+  background: rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  transition: all 0.35s var(--ease-smooth);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Unique top border color per card */
+.stat-card:nth-child(1) {
+  border-top: 2px solid var(--accent-primary);
+}
+
+.stat-card:nth-child(2) {
+  border-top: 2px solid var(--accent-blue);
+}
+
+.stat-card:nth-child(3) {
+  border-top: 2px solid var(--accent-teal);
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at 50% 0%, rgba(124, 58, 237, 0.08), transparent 65%);
+  pointer-events: none;
 }
 
 .stat-card:hover {
-  transform: translateY(-5px);
-  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-6px);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border-medium);
+  box-shadow: var(--shadow-lg), var(--shadow-glow);
 }
 
+/* ── Stat Icon ── */
 .stat-icon {
-  margin-bottom: 1rem;
-  color: var(--accent-primary);
   display: flex;
+  align-items: center;
   justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  margin: 0 auto 1.25rem;
+  transition: transform var(--t-normal) var(--ease-spring);
 }
 
+.stat-card:nth-child(1) .stat-icon {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.2), rgba(168, 85, 247, 0.1));
+  color: var(--accent-secondary);
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.2);
+}
+
+.stat-card:nth-child(2) .stat-icon {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(96, 165, 250, 0.1));
+  color: #60a5fa;
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.2);
+}
+
+.stat-card:nth-child(3) .stat-icon {
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.2), rgba(45, 212, 191, 0.1));
+  color: #2dd4bf;
+  box-shadow: 0 4px 16px rgba(20, 184, 166, 0.2);
+}
+
+.stat-card:hover .stat-icon {
+  transform: scale(1.1) rotate(-3deg);
+}
+
+.stat-value {
+  font-size: 3rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(135deg, #fff, var(--accent-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+/* ── Analytics Panels Grid ── */
 .analytics-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2rem;
+  gap: 1.5rem;
 }
 
 .analytics-panel {
   padding: 2rem;
-  height: 100%;
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
 }
 
 .analytics-panel h2 {
-  font-size: 1.5rem;
-  margin-bottom: 1.5rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 1.75rem;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   color: var(--text-primary);
 }
 
-/* List Items in Analytics */
+/* ── List Items ── */
 .list-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  transition: background 0.2s;
+  padding: 1rem 1.1rem;
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 0.75rem;
+  transition: all 0.25s var(--ease-smooth);
+  position: relative;
+  overflow: hidden;
 }
 
-.list-item:last-child {
-  border-bottom: none;
+/* Animated progress fill on hover (simulated) */
+.list-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--progress, 0%);
+  background: linear-gradient(90deg, var(--accent-glow-soft), transparent);
+  border-radius: inherit;
+  transition: width 0.6s var(--ease-smooth);
+  pointer-events: none;
 }
 
 .list-item:hover {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border-medium);
+  transform: translateX(4px);
 }
 
 .item-info {
   display: flex;
   flex-direction: column;
+  gap: 0.2rem;
 }
 
 .item-title {
   font-weight: 600;
+  font-size: 0.9rem;
   color: var(--text-primary);
 }
 
 .item-sub {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
+  font-size: 0.78rem;
+  color: var(--text-muted);
 }
 
 .item-value {
   font-weight: 700;
-  color: var(--accent-primary);
-  background: rgba(139, 92, 246, 0.1);
+  font-size: 0.85rem;
+  color: var(--accent-secondary);
+  background: var(--accent-glow-soft);
+  border: 1px solid var(--border-glow);
   padding: 0.25rem 0.75rem;
-  border-radius: 20px;
-  font-size: 0.9rem;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
-/* Responsive */
+/* ── Responsive ── */
 @media (max-width: 900px) {
   .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .stats-grid {
     grid-template-columns: 1fr;
   }
 }

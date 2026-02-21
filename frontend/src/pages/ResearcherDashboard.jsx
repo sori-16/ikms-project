@@ -137,93 +137,112 @@ function ResearcherDashboard() {
             </div>
 
             <div className="dashboard-grid">
-                {/* Upload Section */}
-                <div className="glass-panel">
-                    <h2>Upload Document</h2>
-                    <p style={{ fontSize: '0.8rem', opacity: 0.6, marginTop: '-10px', marginBottom: '1.5rem' }}>አዲስ ጥናት ይጫኑ</p>
-                    <form onSubmit={handleUpload} className="upload-form">
-                        <div className="file-input-wrapper">
-                            <input
-                                type="file"
-                                id="file-input"
-                                accept=".pdf"
-                                onChange={handleFileChange}
-                                className="file-input"
-                            />
-                            <label htmlFor="file-input" className="file-label">
-                                {file ? file.name : 'Choose PDF file...'}
-                            </label>
+                {/* Main Content: Document Management */}
+                <div className="main-panels">
+                    <div className="glass-panel">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                            <div style={{ background: 'var(--accent-primary)', padding: '0.8rem', borderRadius: '12px' }}>
+                                <UploadCloud color="white" size={24} />
+                            </div>
+                            <div>
+                                <h2 style={{ margin: 0 }}>Upload New Research</h2>
+                                <p style={{ fontSize: '0.8rem', opacity: 0.6 }}>አዲስ ጥናት ይጫኑ</p>
+                            </div>
                         </div>
 
-                        <button
-                            type="submit"
-                            className="btn-primary"
-                            disabled={uploading || !file}
-                        >
-                            {uploading ? 'Uploading...' : 'Upload Document'}
-                        </button>
-
-                        {message && (
-                            <div className={`message ${message.startsWith('✓') ? 'success' : 'error'}`}>
-                                {message}
+                        <form onSubmit={handleUpload} className="upload-form">
+                            <div className="file-input-wrapper">
+                                <input
+                                    type="file"
+                                    id="file-input"
+                                    accept=".pdf"
+                                    onChange={handleFileChange}
+                                    className="file-input"
+                                />
+                                <label htmlFor="file-input" className="file-label">
+                                    {file ? file.name : 'Drop your paper here or click to browse'}
+                                </label>
                             </div>
-                        )}
-                    </form>
-                </div>
 
-                {/* Saved Searches Section */}
-                <div className="glass-panel">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                        <h2 style={{ margin: 0 }}>Saved Searches & Alerts</h2>
-                        <Bell size={20} className={savedSearches.some(s => s.alert_count > 0) ? "accent-text pulse" : ""} />
+                            <button
+                                type="submit"
+                                className="btn-primary"
+                                disabled={uploading || !file}
+                                style={{ width: '100%', padding: '1rem', borderRadius: '12px', fontSize: '1rem' }}
+                            >
+                                {uploading ? 'Processing Architecture...' : 'Submit for Verification'}
+                            </button>
+
+                            {message && (
+                                <div className={`message ${message.startsWith('✓') ? 'success' : 'error'}`} style={{ marginTop: '1rem' }}>
+                                    {message}
+                                </div>
+                            )}
+                        </form>
                     </div>
 
-                    {savedSearches.length === 0 ? (
-                        <p className="empty-state">No saved searches yet</p>
-                    ) : (
-                        <div className="saved-searches-list">
-                            {savedSearches.map((s) => (
-                                <div key={s.id} className="search-alert-item" style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div onClick={() => navigate(`/?q=${encodeURIComponent(s.query)}`)} style={{ cursor: 'pointer', flex: 1 }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <Search size={14} className="accent-text" />
-                                            <span style={{ fontWeight: 600 }}>"{s.query}"</span>
-                                        </div>
-                                        {s.alert_count > 0 && (
-                                            <span className="alert-badge" onClick={(e) => { e.stopPropagation(); clearAlerts(s.id); }} style={{ background: 'var(--accent-primary)', color: 'white', padding: '2px 8px', borderRadius: '10px', fontSize: '0.75rem', marginTop: '4px', display: 'inline-block', cursor: 'pointer' }}>
-                                                {s.alert_count} New Papers
-                                            </span>
-                                        )}
-                                    </div>
-                                    <button onClick={() => deleteSearch(s.id)} style={{ background: 'transparent', border: 'none', color: 'rgba(255,0,0,0.6)', cursor: 'pointer' }}>
-                                        <Trash2 size={16} />
-                                    </button>
-                                </div>
-                            ))}
+                    <div className="glass-panel">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h2>My Publications</h2>
+                            <span style={{ fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: '20px' }}>
+                                {myDocuments.length} Total
+                            </span>
                         </div>
-                    )}
+                        {myDocuments.length === 0 ? (
+                            <p className="empty-state">No documents uploaded yet</p>
+                        ) : (
+                            <div className="documents-list">
+                                {myDocuments.map((doc) => (
+                                    <div key={doc.id} className="document-item">
+                                        <div>
+                                            <h3 style={{ fontSize: '1.1rem' }}>{doc.title}</h3>
+                                            <p className="doc-date">
+                                                Uploaded on {new Date(doc.upload_date).toLocaleDateString()}
+                                            </p>
+                                        </div>
+                                        {getStatusBadge(doc.status || 'pending')}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
 
-                {/* My Documents Section */}
-                <div className="glass-panel">
-                    <h2>My Documents</h2>
-                    {myDocuments.length === 0 ? (
-                        <p className="empty-state">No documents uploaded yet</p>
-                    ) : (
-                        <div className="documents-list">
-                            {myDocuments.map((doc) => (
-                                <div key={doc.id} className="document-item">
-                                    <div>
-                                        <h3>{doc.title}</h3>
-                                        <p className="doc-date">
-                                            {new Date(doc.upload_date).toLocaleDateString()}
-                                        </p>
-                                    </div>
-                                    {getStatusBadge(doc.status || 'pending')}
-                                </div>
-                            ))}
+                {/* Sidebar: Alerts & Discovery */}
+                <div className="sidebar-panels">
+                    <div className="glass-panel">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h2 style={{ margin: 0 }}>Saved Alerts</h2>
+                            <Bell size={20} className={savedSearches.some(s => s.alert_count > 0) ? "accent-text pulse" : ""} />
                         </div>
-                    )}
+
+                        {savedSearches.length === 0 ? (
+                            <p className="empty-state">No alerts configured</p>
+                        ) : (
+                            <div className="saved-searches-list">
+                                {savedSearches.map((s) => (
+                                    <div key={s.id} className="search-alert-item" style={{ marginBottom: '1rem' }}>
+                                        <div onClick={() => navigate(`/?q=${encodeURIComponent(s.query)}`)} style={{ cursor: 'pointer' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                                <Search size={14} className="accent-text" />
+                                                <span style={{ fontWeight: 600 }}>{s.query}</span>
+                                            </div>
+                                            {s.alert_count > 0 && (
+                                                <div onClick={(e) => { e.stopPropagation(); clearAlerts(s.id); }} className="alert-badge" style={{ background: 'var(--accent-primary)', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', cursor: 'pointer', display: 'inline-block' }}>
+                                                    {s.alert_count} New Matches
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                                            <button onClick={() => deleteSearch(s.id)} style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer' }}>
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

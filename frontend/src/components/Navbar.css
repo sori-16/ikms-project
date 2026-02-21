@@ -1,97 +1,191 @@
-/* Created by: Soreti (Team Leader) - Demo Implementation */
-/* Navbar Styling */
+/* ── Navbar ── */
 .navbar {
     position: sticky;
     top: 0;
-    z-index: 100;
-    padding: 1rem 0;
-    margin-bottom: 2rem;
-    backdrop-filter: blur(20px);
+    z-index: 200;
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    background: rgba(9, 9, 15, 0.75);
+    border-bottom: 1px solid rgba(124, 58, 237, 0.2);
+    padding: 0;
+    margin-bottom: 0;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), var(--shadow-sm);
+    transition: background var(--t-normal) var(--ease-smooth);
 }
 
 .navbar-container {
-    max-width: 1200px;
+    max-width: 1240px;
     margin: 0 auto;
-    padding: 0 2rem;
+    padding: 0 1.5rem;
+    height: 64px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 2rem;
 }
 
+/* Brand Logo */
 .navbar-brand {
-    font-size: 1.5rem;
-    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.3rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+    position: relative;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #fff 20%, var(--accent-secondary) 80%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    transition: filter var(--t-normal) ease, transform var(--t-fast) var(--ease-spring);
+}
+
+.navbar-brand::before {
+    content: '✦';
+    font-size: 0.9rem;
     background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    text-decoration: none;
-    transition: transform 0.3s ease;
+    filter: drop-shadow(0 0 6px var(--accent-glow));
+    animation: float 3s ease-in-out infinite;
 }
 
 .navbar-brand:hover {
-    transform: scale(1.05);
+    filter: drop-shadow(0 0 12px var(--accent-glow));
+    transform: scale(1.03);
 }
 
+/* Nav Links */
 .navbar-links {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: 0.25rem;
 }
 
 .nav-link {
-    color: var(--text-primary);
+    color: var(--text-secondary);
     text-decoration: none;
     font-weight: 500;
-    transition: color 0.3s ease;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-family: inherit;
+    padding: 0.4rem 0.85rem;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: none;
+    cursor: pointer;
+    transition: color var(--t-fast) var(--ease-smooth),
+        background var(--t-fast) var(--ease-smooth);
+    position: relative;
+}
+
+.nav-link::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 50%;
+    right: 50%;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+    border-radius: 2px;
+    transition: left var(--t-normal) var(--ease-smooth),
+        right var(--t-normal) var(--ease-smooth);
 }
 
 .nav-link:hover {
-    color: var(--accent-primary);
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
 }
 
+.nav-link:hover::after {
+    left: 10%;
+    right: 10%;
+}
+
+/* User greeting */
 .nav-user {
-    color: var(--text-secondary);
-    font-size: 0.9rem;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    padding: 0 0.5rem;
+    font-weight: 500;
 }
 
+/* Primary CTA button in nav */
 .btn-primary-small {
-    padding: 0.5rem 1rem;
+    padding: 0.45rem 1.1rem;
     background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-    border-radius: 8px;
-    color: white;
+    color: white !important;
+    border-radius: var(--radius-full);
+    font-size: 0.85rem;
     font-weight: 600;
+    letter-spacing: 0.01em;
+    border: none;
+    position: relative;
+    overflow: hidden;
+    transition: transform var(--t-fast) var(--ease-spring),
+        box-shadow var(--t-normal) var(--ease-smooth);
+}
+
+.btn-primary-small::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 60%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transform: skewX(-20deg);
+    transition: left 0.5s ease;
 }
 
 .btn-primary-small:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+    box-shadow: 0 6px 20px var(--accent-glow);
 }
 
+.btn-primary-small:hover::after {
+    left: 150%;
+}
+
+/* Logout button */
 .btn-logout {
-    padding: 0.5rem 1rem;
-    background: rgba(239, 68, 68, 0.2);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: 8px;
-    color: #ef4444;
+    padding: 0.4rem 0.9rem;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2) !important;
+    border-radius: var(--radius-full);
+    color: rgba(248, 113, 113, 0.8) !important;
+    font-size: 0.85rem;
+    transition: all var(--t-fast) var(--ease-smooth) !important;
 }
 
 .btn-logout:hover {
-    background: rgba(239, 68, 68, 0.3);
+    background: rgba(239, 68, 68, 0.15) !important;
+    border-color: rgba(239, 68, 68, 0.4) !important;
+    color: #f87171 !important;
 }
 
+.btn-logout::after {
+    display: none;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
+    .navbar-container {
+        height: 56px;
+    }
+
     .navbar-links {
-        gap: 1rem;
-        font-size: 0.9rem;
+        gap: 0;
     }
 
     .nav-user {
         display: none;
+    }
+
+    .nav-link {
+        font-size: 0.82rem;
+        padding: 0.35rem 0.6rem;
     }
 }

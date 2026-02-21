@@ -49,7 +49,10 @@ function Login() {
 
     return (
         <div className="auth-container">
-            <div className="auth-card glass-panel">
+            <div className="auth-card">
+                <div className="auth-brand">
+                    <span className="auth-logo">✦ IKMS</span>
+                </div>
                 <h1 className="auth-title">Welcome Back</h1>
                 <p className="auth-subtitle">Sign in to your IKMS account</p>
 
@@ -57,7 +60,7 @@ function Login() {
 
                 <form onSubmit={handleSubmit} className="auth-form">
                     <div className="form-group">
-                        <label htmlFor="email">Email</label>
+                        <label htmlFor="email">Email address</label>
                         <input
                             type="email"
                             id="email"
@@ -65,7 +68,6 @@ function Login() {
                             value={formData.email}
                             onChange={handleChange}
                             required
-                            className="glass-input"
                             placeholder="researcher@example.com"
                         />
                     </div>
@@ -79,17 +81,16 @@ function Login() {
                             value={formData.password}
                             onChange={handleChange}
                             required
-                            className="glass-input"
                             placeholder="••••••••"
                         />
                     </div>
 
                     <button
                         type="submit"
-                        className="btn-primary"
+                        className="btn-auth"
                         disabled={loading}
                     >
-                        {loading ? 'Signing in...' : 'Sign In'}
+                        {loading ? 'Signing in...' : 'Sign In →'}
                     </button>
                 </form>
 
