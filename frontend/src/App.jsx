@@ -10,6 +10,10 @@ import ResearcherDashboard from './pages/ResearcherDashboard';
 import ModeratorDashboard from './pages/ModeratorDashboard';
 import InstitutionList from './pages/InstitutionList';
 import InstitutionProfile from './pages/InstitutionProfile';
+import AnalyticsDashboard from './pages/AnalyticsDashboard';
+import MyLibrary from './pages/MyLibrary';
+import AuthorProfile from './pages/AuthorProfile';
+import InstitutionDashboard from './pages/InstitutionDashboard';
 import './App.css';
 
 // Protected Route Component
@@ -40,6 +44,10 @@ function App() {
           <Route path="/document/:id" element={<DocumentDetail />} />
           <Route path="/institutions" element={<InstitutionList />} />
           <Route path="/institution/:id" element={<InstitutionProfile />} />
+          <Route path="/analytics" element={<AnalyticsDashboard />} />
+          <Route path="/library" element={<MyLibrary />} />
+          <Route path="/author/:id" element={<AuthorProfile />} />
+          <Route path="/institution-dashboard" element={<InstitutionDashboard />} />
 
           {/* Protected Routes */}
           <Route

@@ -25,6 +25,7 @@ function Navbar() {
                         <>
                             <Link to="/" className="nav-link">Search</Link>
                             <Link to="/institutions" className="nav-link">Institutions</Link>
+                            <Link to="/analytics" className="nav-link">Impact</Link>
                             <Link to="/login" className="nav-link">Login</Link>
                             <Link to="/register" className="nav-link btn-primary-small">Register</Link>
                         </>
@@ -32,8 +33,12 @@ function Navbar() {
                         <>
                             <Link to="/" className="nav-link">Search</Link>
                             <Link to="/institutions" className="nav-link">Institutions</Link>
+                            <Link to="/analytics" className="nav-link">Impact</Link>
+                            <Link to="/library" className="nav-link">My Library</Link>
                             {user?.role === 'moderator' || user?.role === 'sys_admin' ? (
                                 <Link to="/moderator-dashboard" className="nav-link">Dashboard</Link>
+                            ) : user?.role === 'inst_admin' ? (
+                                <Link to="/institution-dashboard" className="nav-link">Dashboard</Link>
                             ) : (
                                 <Link to="/researcher-dashboard" className="nav-link">Dashboard</Link>
                             )}

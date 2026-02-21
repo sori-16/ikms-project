@@ -30,6 +30,11 @@ class DocumentStatus(enum.Enum):
     APPROVED = 'approved'
     REJECTED = 'rejected'
 
+class InstitutionalStatus(enum.Enum):
+    PENDING = 'pending'
+    VERIFIED = 'verified'
+    REJECTED = 'rejected'
+
 # Association Table for Many-to-Many relationship between Documents and Authors
 document_authors = db.Table('document_authors',
     db.Column('document_id', db.Integer, db.ForeignKey('documents.id'), primary_key=True),
@@ -43,8 +48,11 @@ class User(db.Model):
     email = db.Column(db.String(255), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.Enum(UserRole), nullable=False, default=UserRole.RESEARCHER)
+    institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
+    # Relationship to Institution
+    institution = db.relationship('Institution', backref=db.backref('users', lazy=True))
     saved_searches = db.relationship('SavedSearch', backref='user', lazy=True)
 
 class Institution(db.Model):
@@ -61,30 +69,66 @@ class Author(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     affiliation_id = db.Column(db.Integer, db.ForeignKey('institutions.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True) # Linked researcher account
     
-    # Relationship to Institution (optional, if authors belong to institutions directly)
-    institution = db.relationship('Institution', backref='authors', lazy=True)
+    # Relationship to Institution
+    institution = db.relationship('Institution', backref=db.backref('authors', lazy=True))
+    user = db.relationship('User', backref=db.backref('author_profile', uselist=False))
 
 class Document(db.Model):
     __tablename__ = 'documents'
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.Text, nullable=False)
-    abstract = db.Column(db.Text)
-    publication_date = db.Column(db.Date)
+    title = db.Column(db.String(255), nullable=False)
     file_path = db.Column(db.String(255), nullable=False)
+    abstract = db.Column(db.Text)
     upload_date = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # New Fields for Phase 4 & 11
+    status = db.Column(db.Enum(DocumentStatus), default=DocumentStatus.PENDING)
+    institutional_status = db.Column(db.Enum(InstitutionalStatus), default=InstitutionalStatus.PENDING)
+    publication_date = db.Column(db.DateTime)
+    
     institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'))
     uploader_id = db.Column(db.Integer, db.ForeignKey('users.id'))
-    status = db.Column(db.Enum(DocumentStatus), nullable=False, default=DocumentStatus.PENDING)
-    download_count = db.Column(db.Integer, default=0)
     
     authors = db.relationship('Author', secondary=document_authors, lazy='subquery',
         backref=db.backref('documents', lazy=True))
+
+    topic_scores = db.relationship('TopicScore', backref='document', lazy=True)
+    
+    # Phase 8: Analytics relationships
+    downloads = db.relationship('DownloadLog', backref='document', lazy=True)
+
+class TopicScore(db.Model):
+    __tablename__ = 'topic_scores'
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
+    topic = db.Column(db.String(100), nullable=False)
+    score = db.Column(db.Float, nullable=False)
 
 class SavedSearch(db.Model):
     __tablename__ = 'saved_searches'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    query_string = db.Column(db.String(500), nullable=False)
-    filters = db.Column(db.JSON) # Store filters as JSON
+    query = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_checked_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# Phase 8: Analytics & Personalization Models
+class DownloadLog(db.Model):
+    __tablename__ = 'download_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True) # Nullable for public downloads
+    downloaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class SavedDocument(db.Model):
+    __tablename__ = 'saved_documents'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
+    saved_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Ensure a user can only save a doc once
+    __table_args__ = (db.UniqueConstraint('user_id', 'document_id', name='unique_user_doc_save'),)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

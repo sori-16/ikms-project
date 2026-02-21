@@ -1,4 +1,34 @@
-/* Created by: Soreti (Team Leader) - Demo Implementation */
+.pulse {
+    animation: pulse-red 2s infinite;
+    color: #ff4d4d;
+}
+
+@keyframes pulse-red {
+    0% {
+        transform: scale(0.95);
+        opacity: 0.7;
+    }
+
+    50% {
+        transform: scale(1.1);
+        opacity: 1;
+    }
+
+    100% {
+        transform: scale(0.95);
+        opacity: 0.7;
+    }
+}
+
+.alert-badge {
+    transition: transform 0.2s ease;
+}
+
+.alert-badge:hover {
+    transform: scale(1.05);
+    background: #ff3333 !important;
+}
+
 /* Dashboard Styling */
 .dashboard-container {
     max-width: 1200px;
