@@ -1,4 +1,13 @@
-from elasticsearch import Elasticsearch
+"""
+IKMS Elasticsearch Setup
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+
+This file contains:
+- Elasticsearch index creation
+- Custom medical synonym analyzers
+- Field mappings for research papers
+"""
 import os
 
 # Connect to Elasticsearch

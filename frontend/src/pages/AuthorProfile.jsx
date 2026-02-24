@@ -12,8 +12,9 @@ function AuthorProfile() {
 
     useEffect(() => {
         const fetchAuthor = async () => {
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
             try {
-                const response = await axios.get(`http://localhost:5000/authors/${id}`);
+                const response = await axios.get(`${apiUrl}/authors/${id}`);
                 setAuthor(response.data);
             } catch (error) {
                 console.error('Error fetching author:', error);
@@ -43,9 +44,10 @@ function AuthorProfile() {
                     {!author.user_id && (
                         <button
                             onClick={async () => {
+                                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
                                 try {
                                     const { getAuthHeaders } = await import('../utils/auth');
-                                    await axios.post(`http://localhost:5000/authors/${author.id}/claim`, {}, {
+                                    await axios.post(`${apiUrl}/authors/${author.id}/claim`, {}, {
                                         headers: getAuthHeaders()
                                     });
                                     alert('Profile claimed successfully!');
@@ -77,11 +79,27 @@ function AuthorProfile() {
                     )}
                 </div>
 
-                <div className="author-stats">
+                <div className="author-stats" style={{ display: 'flex', gap: '2rem', marginTop: '2rem' }}>
                     <div className="author-stat-box">
-                        <span className="stat-num">{author.documents?.length || 0}</span>
+                        <span className="stat-num">{author.stats?.total_publications || 0}</span>
                         <span className="stat-label">Publications</span>
                     </div>
+                    <div className="author-stat-box">
+                        <span className="stat-num">{author.stats?.total_downloads || 0}</span>
+                        <span className="stat-label">Downloads</span>
+                    </div>
+                    <div className="author-stat-box">
+                        <span className="stat-num">{author.stats?.total_views || 0}</span>
+                        <span className="stat-label">Views</span>
+                    </div>
+                    {author.stats?.most_popular_paper && (
+                        <div className="author-stat-box most-popular" style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '2rem' }}>
+                            <span className="stat-label" style={{ opacity: 0.6, fontSize: '0.7rem', textTransform: 'uppercase' }}>Most Popular</span>
+                            <Link to={`/document/${author.stats.most_popular_paper.id}`} className="accent-link" style={{ fontSize: '0.9rem', fontWeight: 600, display: 'block', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {author.stats.most_popular_paper.title}
+                            </Link>
+                        </div>
+                    )}
                 </div>
             </div>
 

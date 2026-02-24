@@ -1,4 +1,13 @@
-// Created by: Soreti (Team Leader) - Demo Implementation
+/**
+ * IKMS Frontend - Search & Discovery Page
+ * Created by: Soreti (Team Leader)
+ * DO NOT MODIFY WITHOUT PERMISSION
+ * 
+ * This file contains:
+ * - Search bar with advanced filters
+ * - Elasticsearch-powered publication discovery
+ * - Institution and Year based filtering
+ */
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Search, Filter, RefreshCw, Calendar, Building2, BookOpen, Bell } from 'lucide-react';
@@ -12,46 +21,50 @@ function SearchPage() {
     const [loading, setLoading] = useState(false);
     const [institutions, setInstitutions] = useState([]);
 
-    // Filters
-    const [selectedInst, setSelectedInst] = useState('');
-    const [selectedYear, setSelectedYear] = useState('');
+    // State for initial landing page content
+    const [hasSearched, setHasSearched] = useState(false);
+    const [latestResearch, setLatestResearch] = useState([]);
 
-    // Fetch Institutions on Mount
+    // Fetch institutions and latest research on component mount
     useEffect(() => {
-        const fetchMeta = async () => {
+        const fetchInitialData = async () => {
             try {
-                const instRes = await axios.get('http://localhost:5000/institutions');
-                setInstitutions(instRes.data);
-            } catch (err) {
-                console.error('Failed to load institutions');
+                // Fetch institutions
+                const instResponse = await axios.get(`${import.meta.env.VITE_API_URL}/institutions`);
+                setInstitutions(instResponse.data);
+
+                // Fetch latest research for landing page
+                const latestResponse = await axios.get(`${import.meta.env.VITE_API_URL}/latest-research`);
+                setLatestResearch(latestResponse.data);
+            } catch (error) {
+                console.error('Failed to fetch initial data:', error);
             }
         };
-        fetchMeta();
+        fetchInitialData();
     }, []);
 
-    // Search Logic
+    // Placeholder for handleSearch function, assuming it will be implemented later
     const handleSearch = async (e) => {
-        if (e) e.preventDefault(); // allow calling without event
-
+        e.preventDefault();
         setLoading(true);
+        setHasSearched(true);
         try {
-            const params = { q: query };
-            if (selectedInst) params.institution_id = selectedInst;
-            if (selectedYear) params.year = selectedYear;
-
-            const response = await axios.get('http://localhost:5000/search', { params });
+            const response = await axios.get(`${import.meta.env.VITE_API_URL}/search`, {
+                params: {
+                    q: query,
+                    institution_id: selectedInst,
+                    year: selectedYear
+                }
+            });
             setResults(response.data);
         } catch (error) {
             console.error('Search failed:', error);
+            setResults([]);
         } finally {
             setLoading(false);
         }
     };
 
-    // Auto-search when filters change
-    useEffect(() => {
-        handleSearch();
-    }, [selectedInst, selectedYear]); // Trigger on filter change
 
     const resetFilters = () => {
         setQuery('');
@@ -62,9 +75,16 @@ function SearchPage() {
 
     return (
         <div className="container">
-            {/* Hero Section */}
-            <div className="hero-section">
-                <h1 className="hero-title">IKMS National Portal</h1>
+            {/* Hero Section - Dynamic Height */}
+            <div className={`hero-section ${hasSearched ? 'hero-compact' : ''}`}>
+                <h1 className="hero-title">
+                    {hasSearched ? 'IKMS National Portal' : 'Institutional Knowledge Management System'}
+                </h1>
+
+                {!hasSearched && (
+                    <div className="amharic-title-hero"> የኢትዮጵያ ብሄራዊ የእውቀት እና የመረጃ አያያዝ ስርዓት </div>
+                )}
+
                 <p className="hero-subtitle">
                     Search, Analyze, and Discover Knowledge from Ethiopia's Top Research Institutions.
                 </p>
@@ -93,152 +113,176 @@ function SearchPage() {
                     <button onClick={() => setQuery('Public Health Policy')} className="trending-tag">#PublicHealth</button>
                 </div>
 
-                <div className="hero-stats">
-                    <div className="stat-item">
-                        <span className="stat-value">150+</span>
-                        <span className="stat-label">Papers</span>
-                    </div>
-                    <div className="stat-item">
-                        <span className="stat-value">{institutions.length}</span>
-                        <span className="stat-label">Institutions</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Main Content Area */}
-            <div className="search-header" style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                <h1 style={{ background: 'linear-gradient(to right, #6366f1, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontSize: '3.5rem', fontWeight: '800', marginBottom: '0.5rem' }}>
-                    National Knowledge Portal
-                </h1>
-                <p style={{ fontSize: '1.2rem', opacity: 0.8 }}>የኢትዮጵያ ብሔራዊ የእውቀት እና የመረጃ አያያዝ ሥርዓት</p>
-            </div>
-
-            <div className="search-layout">
-
-                {/* Sidebar Filters */}
-                <div className="search-sidebar">
-                    <div className="sidebar-title">
-                        <Filter size={18} />
-                        Filters
-                    </div>
-
-                    <div className="filter-group">
-                        <label className="filter-label">Institution</label>
-                        <select
-                            className="filter-select"
-                            value={selectedInst}
-                            onChange={(e) => setSelectedInst(e.target.value)}
-                        >
-                            <option value="">All Institutions</option>
-                            {institutions.map(inst => (
-                                <option key={inst.id} value={inst.id}>{inst.name}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="filter-group">
-                        <label className="filter-label">Publication Year</label>
-                        <select
-                            className="filter-select"
-                            value={selectedYear}
-                            onChange={(e) => setSelectedYear(e.target.value)}
-                        >
-                            <option value="">All Years</option>
-                            {/* Hardcoded years for demo */}
-                            <option value="2026">2026</option>
-                            <option value="2025">2025</option>
-                            <option value="2024">2024</option>
-                            <option value="2023">2023</option>
-                        </select>
-                    </div>
-
-                    {(query || selectedInst || selectedYear) && (
-                        <button onClick={resetFilters} className="reset-filters">
-                            <RefreshCw size={14} />
-                            Reset Filters
-                        </button>
-                    )}
-                </div>
-
-                {/* Results List */}
-                <div className="results-area">
-                    <div className="results-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div className="results-count">
-                            Found <span>{results.length}</span> Results
+                {!hasSearched && (
+                    <div className="hero-stats">
+                        <div className="stat-item">
+                            <span className="stat-value">150+</span>
+                            <span className="stat-label">Papers</span>
                         </div>
-                        {results.length > 0 && query && (
-                            <button
-                                onClick={async () => {
-                                    try {
-                                        const { getAuthHeaders } = await import('../utils/auth');
-                                        await axios.post('http://localhost:5000/saved-searches', { query }, {
-                                            headers: getAuthHeaders()
-                                        });
-                                        alert('Search query saved! Check your dashboard for alerts.');
-                                    } catch (err) {
-                                        alert('Failed to save search. Make sure you are logged in.');
-                                    }
-                                }}
-                                className="btn-secondary-small"
-                                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 1rem' }}
+                        <div className="stat-item">
+                            <span className="stat-value">{institutions.length}</span>
+                            <span className="stat-label">Institutions</span>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Landing Only: Latest Research Section */}
+            {!hasSearched && (
+                <div className="featured-research-area">
+                    <h2 className="section-title">Latest Research Publications</h2>
+                    <div className="featured-grid">
+                        {latestResearch.map(doc => (
+                            <div key={doc.id} className="doc-card-enhanced featured-card">
+                                <Link to={`/document/${doc.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                                    <h3>{doc.title}</h3>
+                                    <p className="abstract-short">{doc.abstract?.substring(0, 150)}...</p>
+                                    <div className="card-footer">
+                                        <span className="inst-badge">{institutions.find(i => i.id === doc.institution_id)?.name || 'JU-CBMP'}</span>
+                                        <span className="view-more">View Full Text →</span>
+                                    </div>
+                                </Link>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="center-actions">
+                        <button className="btn-secondary" onClick={() => setHasSearched(true)}>
+                            <BookOpen size={18} /> Browse All Publications
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Main Content Area - Only if searched or browsing */}
+            {hasSearched && (
+                <div className="search-layout animate-in">
+
+                    {/* Sidebar Filters */}
+                    <div className="search-sidebar">
+                        <div className="sidebar-title">
+                            <Filter size={18} />
+                            Filters
+                        </div>
+
+                        <div className="filter-group">
+                            <label className="filter-label">Institution</label>
+                            <select
+                                className="filter-select"
+                                value={selectedInst}
+                                onChange={(e) => setSelectedInst(e.target.value)}
                             >
-                                <Bell size={14} /> Save Search & Get Alerts
+                                <option value="">All Institutions</option>
+                                {institutions.map(inst => (
+                                    <option key={inst.id} value={inst.id}>{inst.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="filter-group">
+                            <label className="filter-label">Publication Year</label>
+                            <select
+                                className="filter-select"
+                                value={selectedYear}
+                                onChange={(e) => setSelectedYear(e.target.value)}
+                            >
+                                <option value="">All Years</option>
+                                {/* Hardcoded years for demo */}
+                                <option value="2026">2026</option>
+                                <option value="2025">2025</option>
+                                <option value="2024">2024</option>
+                                <option value="2023">2023</option>
+                            </select>
+                        </div>
+
+                        {(query || selectedInst || selectedYear) && (
+                            <button onClick={resetFilters} className="reset-filters">
+                                <RefreshCw size={14} />
+                                Reset Filters
                             </button>
                         )}
                     </div>
 
-                    {loading ? (
-                        <div className="loading-state">Searching...</div>
-                    ) : (
-                        <div>
-                            {results.length === 0 ? (
-                                <div className="empty-state" style={{ border: 'none', background: 'transparent' }}>
-                                    {query || selectedInst || selectedYear ? 'No documents found.' : 'Start searching knowledge.'}
-                                </div>
-                            ) : (
-                                results.map((doc) => (
-                                    <div key={doc.id} className="doc-card-enhanced">
-                                        <Link to={`/document/${doc.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                                            <h3>{doc.title}</h3>
-                                            <p className="abstract">{doc.abstract}</p>
-
-                                            <div className="tag-container" style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
-                                                {doc.upload_date && (
-                                                    <span className="tag tag-year">
-                                                        <Calendar size={12} />
-                                                        {new Date(doc.upload_date).getFullYear()}
-                                                    </span>
-                                                )}
-                                                {doc.institution_id && (
-                                                    <span className="tag tag-inst">
-                                                        <Building2 size={12} />
-                                                        {institutions.find(i => i.id === doc.institution_id)?.name || 'Institution'}
-                                                    </span>
-                                                )}
-
-                                                {/* Author Links */}
-                                                {doc.authors && doc.authors.map(auth => (
-                                                    <Link
-                                                        key={auth.id}
-                                                        to={`/author/${auth.id}`}
-                                                        className="tag tag-author"
-                                                        onClick={(e) => e.stopPropagation()} // Prevent card click
-                                                        style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                                    >
-                                                        <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>👤 {auth.name}</span>
-                                                    </Link>
-                                                ))}
-                                            </div>
-                                        </Link>
-                                    </div>
-                                ))
+                    {/* Results List */}
+                    <div className="results-area">
+                        <div className="results-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div className="results-count">
+                                Found <span>{results.length}</span> Results
+                            </div>
+                            {results.length > 0 && query && (
+                                <button
+                                    onClick={async () => {
+                                        try {
+                                            const { getAuthHeaders } = await import('../utils/auth');
+                                            await axios.post(`${import.meta.env.VITE_API_URL}/saved-searches`, { query }, {
+                                                headers: getAuthHeaders()
+                                            });
+                                            alert('Search query saved! Check your dashboard for alerts.');
+                                        } catch (err) {
+                                            alert('Failed to save search. Make sure you are logged in.');
+                                        }
+                                    }}
+                                    className="btn-secondary-small"
+                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 1rem' }}
+                                >
+                                    <Bell size={14} /> Save Search & Get Alerts
+                                </button>
                             )}
                         </div>
-                    )}
+
+                        {loading ? (
+                            <div className="loading-state">Searching...</div>
+                        ) : (
+                            <div>
+                                {results.length === 0 ? (
+                                    <div className="empty-state" style={{ border: 'none', background: 'transparent' }}>
+                                        {query || selectedInst || selectedYear ? 'No documents found.' : 'Start searching knowledge.'}
+                                    </div>
+                                ) : (
+                                    results.map((doc) => (
+                                        <div key={doc.id} className="doc-card-enhanced">
+                                            <Link to={`/document/${doc.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                                                <h3>{doc.title}</h3>
+                                                <p className="abstract">{doc.abstract}</p>
+
+                                                <div className="tag-container" style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                                                    {doc.upload_date && (
+                                                        <span className="tag tag-year">
+                                                            <Calendar size={12} />
+                                                            {new Date(doc.upload_date).getFullYear()}
+                                                        </span>
+                                                    )}
+                                                    {doc.institution_id && (
+                                                        <span className="tag tag-inst">
+                                                            <Building2 size={12} />
+                                                            {institutions.find(i => i.id === doc.institution_id)?.name || 'Institution'}
+                                                        </span>
+                                                    )}
+
+                                                    {/* Author Links */}
+                                                    {doc.authors && doc.authors.map(auth => (
+                                                        <Link
+                                                            key={auth.id}
+                                                            to={`/author/${auth.id}`}
+                                                            className="tag tag-author"
+                                                            onClick={(e) => e.stopPropagation()} // Prevent card click
+                                                            style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                                        >
+                                                            <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>👤 {auth.name}</span>
+                                                        </Link>
+                                                    ))}
+                                                </div>
+                                            </Link>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 }
 
 export default SearchPage;
+

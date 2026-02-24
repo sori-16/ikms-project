@@ -5,10 +5,11 @@ DO NOT MODIFY WITHOUT PERMISSION
 
 This file contains:
 - Authentication endpoints (register, login)
-- Document upload and processing
-- Search and recommendation APIs
-- Moderation workflow
-- Institution management
+- Document upload and processing with AI metadata extraction
+- Search and recommendation APIs (Postgres + Elasticsearch)
+- Moderation workflow (Institutional & System levels)
+- Institution & Author management
+- Analytics & Citation generation
 """
 
 import os
@@ -155,15 +156,19 @@ def create_app():
                 # 5. Save to Postgres
                 # Get institution_id from form data (if provided)
                 institution_id = request.form.get('institution_id')
-                uploader_id = request.form.get('uploader_id')  # Can be extracted from JWT in future
+                uploader_id = request.form.get('uploader_id')
+                
+                # Get file size
+                file_size = os.path.getsize(filepath)
                 
                 new_doc = Document(
-                    title=filename, # Using filename as title for now
+                    title=filename,
                     abstract=raw_text[:500] if raw_text else "",
                     file_path=filepath,
+                    file_size_bytes=file_size,
                     institution_id=int(institution_id) if institution_id else None,
                     uploader_id=int(uploader_id) if uploader_id else None,
-                    status=DocumentStatus.PENDING  # All uploads start as pending
+                    status=DocumentStatus.PENDING
                 )
                 db.session.add(new_doc)
                 db.session.commit()
@@ -195,14 +200,76 @@ def create_app():
         
         return jsonify({"error": "Invalid file type. Only PDF allowed."}), 400
 
+    @app.route('/documents/<int:doc_id>/revision', methods=['POST'])
+    @login_required
+    def submit_revision(doc_id):
+        """Submit a revision for a rejected document"""
+        doc = Document.query.get_or_404(doc_id)
+        
+        # Security check: Only the uploader can submit a revision
+        if doc.uploader_id != request.user_id:
+            return jsonify({"error": "Unauthorized"}), 403
+            
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+            
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+            
+        if file and file.filename.lower().endswith('.pdf'):
+            try:
+                # 1. Save new file
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"rev_{doc_id}_{filename}")
+                file.save(filepath)
+                
+                # 2. Re-process
+                raw_text = extract_text_from_pdf(filepath)
+                cleaned_text = clean_text(raw_text)
+                
+                # 3. Update DB
+                doc.file_path = filepath
+                doc.status = DocumentStatus.PENDING
+                doc.upload_date = datetime.utcnow()
+                doc.file_size_bytes = os.path.getsize(filepath)
+                doc.title = filename
+                doc.abstract = raw_text[:500] if raw_text else ""
+                
+                db.session.commit()
+                
+                # 4. Update Elasticsearch
+                if 'es' in globals() and es:
+                    es.index(index="documents", id=doc.id, body={
+                        "title": doc.title,
+                        "abstract": doc.abstract,
+                        "full_text": cleaned_text,
+                        "institution_id": doc.institution_id,
+                        "upload_date": doc.upload_date
+                    })
+                
+                return jsonify({"message": "Revision submitted successfully", "id": doc.id}), 200
+            except Exception as e:
+                db.session.rollback()
+                return jsonify({"error": str(e)}), 500
+                
+        return jsonify({"error": "Invalid file format"}), 400
+
     @app.route('/documents/<int:doc_id>', methods=['GET'])
     def get_single_document(doc_id):
         """Get details for a single document"""
         doc = Document.query.get_or_404(doc_id)
+        # Increment View Count
+        doc.view_count = (doc.view_count or 0) + 1
+        db.session.commit()
+        
         return jsonify({
             "id": doc.id,
             "title": doc.title,
             "abstract": doc.abstract,
+            "file_size": doc.file_size_bytes,
+            "view_count": doc.view_count,
+            "download_count": doc.download_count,
             "institution": doc.institution.name if doc.institution else "Unknown",
             "institution_id": doc.institution_id,
             "upload_date": doc.upload_date.isoformat(),
@@ -210,6 +277,23 @@ def create_app():
             "status": doc.status.value,
             "institutional_status": doc.institutional_status.value,
             "authors": [{"id": auth.id, "name": auth.name} for auth in doc.authors]
+        }), 200
+
+    @app.route('/documents/<int:doc_id>/citation', methods=['GET'])
+    def get_citation(doc_id):
+        """Generate citations in multiple formats"""
+        doc = Document.query.get_or_404(doc_id)
+        author_names = ", ".join([a.name for a in doc.authors]) or "Anonymous"
+        year = doc.publication_date.year if doc.publication_date else doc.upload_date.year
+        
+        apa = f"{author_names} ({year}). {doc.title}. IKMS National Research Portal."
+        mla = f"{author_names}. \"{doc.title}.\" IKMS, {year}."
+        bibtex = f"@article{{ikms_{doc.id},\n  author = {{{author_names}}},\n  title = {{{doc.title}}},\n  year = {{{year}}},\n  publisher = {{IKMS}}\n}}"
+        
+        return jsonify({
+            "apa": apa,
+            "mla": mla,
+            "bibtex": bibtex
         }), 200
 
     @app.route('/authors', methods=['GET'])
@@ -224,12 +308,25 @@ def create_app():
 
     @app.route('/authors/<int:author_id>', methods=['GET'])
     def get_author_profile(author_id):
-        """Get author details and their list of documents"""
+        """Get author details and their list of documents with aggregate stats"""
         author = Author.query.get_or_404(author_id)
         
         # Get all approved documents for this author
-        # Using the backref 'documents' from models.py
         approved_docs = [d for d in author.documents if d.status == DocumentStatus.APPROVED]
+        
+        # Calculate aggregate stats
+        total_downloads = sum(d.download_count for d in approved_docs)
+        total_views = sum(d.view_count for d in approved_docs)
+        
+        # Find most popular paper
+        most_popular = None
+        if approved_docs:
+            most_popular_doc = max(approved_docs, key=lambda d: d.download_count + d.view_count)
+            most_popular = {
+                "id": most_popular_doc.id,
+                "title": most_popular_doc.title,
+                "downloads": most_popular_doc.download_count
+            }
         
         return jsonify({
             "id": author.id,
@@ -237,12 +334,196 @@ def create_app():
             "user_id": author.user_id,
             "affiliation": author.institution.name if author.institution else "Independent",
             "affiliation_id": author.affiliation_id,
+            "stats": {
+                "total_publications": len(approved_docs),
+                "total_downloads": total_downloads,
+                "total_views": total_views,
+                "most_popular_paper": most_popular
+            },
             "documents": [{
                 "id": d.id,
                 "title": d.title,
                 "abstract": d.abstract,
+                "downloads": d.download_count,
+                "views": d.view_count,
                 "publication_date": d.publication_date.isoformat() if d.publication_date else None
             } for d in approved_docs]
+        }), 200
+
+    @app.route('/authors/<int:author_id>/claim', methods=['POST'])
+    @login_required
+    def claim_author_profile(author_id):
+        """Allow a logged in user to claim an author profile"""
+        author = Author.query.get_or_404(author_id)
+        
+        if author.user_id:
+            return jsonify({"error": "This profile has already been claimed"}), 400
+        
+        # Check if the current user already has an author profile
+        existing_profile = Author.query.filter_by(user_id=request.user_id).first()
+        if existing_profile:
+            return jsonify({"error": "You already have a claimed author profile"}), 400
+            
+        author.user_id = request.user_id
+        db.session.commit()
+        
+        return jsonify({"message": "Profile claimed successfully", "author_id": author.id}), 200
+
+    @app.route('/researcher/stats', methods=['GET'])
+    @login_required
+    def get_researcher_stats():
+        """Get impact stats for the logged-in researcher"""
+        # Get all documents uploaded by this user
+        docs = Document.query.filter_by(uploader_id=request.user_id).all()
+        
+        total_publications = len(docs)
+        total_downloads = sum(d.download_count for d in docs)
+        total_views = sum(d.view_count for d in docs)
+        
+        return jsonify({
+            "total_publications": total_publications,
+            "total_downloads": total_downloads,
+            "total_views": total_views
+        }), 200
+
+    @app.route('/institutions/<int:inst_id>/analytics', methods=['GET'])
+    @login_required
+    def get_institution_analytics(inst_id):
+        """Get analytics for a specific institution"""
+        # Security: Only inst_admin for this inst or sys_admin
+        if request.user_role != UserRole.SYS_ADMIN.value:
+            membership = InstitutionMembership.query.filter_by(
+                user_id=request.user_id, 
+                institution_id=inst_id,
+                role='admin'
+            ).first()
+            if not membership:
+                return jsonify({"error": "Unauthorized"}), 403
+                
+        # 1. Document Stats
+        docs = Document.query.filter_by(institution_id=inst_id, status=DocumentStatus.APPROVED).all()
+        total_docs = len(docs)
+        total_downloads = sum(d.download_count for d in docs)
+        total_views = sum(d.view_count for d in docs)
+        
+        # 2. Researcher Stats
+        active_researchers = db.session.query(Document.uploader_id)\
+            .filter(Document.institution_id == inst_id)\
+            .distinct().count()
+            
+        return jsonify({
+            "total_documents": total_docs,
+            "total_downloads": total_downloads,
+            "total_views": total_views,
+            "active_researchers": active_researchers,
+            "institution_id": inst_id
+        }), 200
+
+    @app.route('/institutions/my/analytics', methods=['GET'])
+    @login_required
+    def get_my_institution_analytics():
+        """Convenience endpoint for institutional admins to get their own institution's stats"""
+        membership = InstitutionMembership.query.filter_by(
+            user_id=request.user_id, 
+            role='admin'
+        ).first()
+        
+        if not membership and request.user_role != UserRole.SYS_ADMIN.value:
+            return jsonify({"error": "Unauthorized"}), 403
+            
+        inst_id = membership.institution_id if membership else None
+        if not inst_id:
+            return jsonify({"error": "No institution associated with this admin"}), 404
+            
+        return get_institution_analytics(inst_id)
+
+    @app.route('/institutions/my/pending', methods=['GET'])
+    @login_required
+    def get_my_institution_pending():
+        """Get documents pending institutional verification for the admin's institution"""
+        # Find which institution this user admins for
+        membership = InstitutionMembership.query.filter_by(
+            user_id=request.user_id, 
+            role='admin'
+        ).first()
+        
+        if not membership and request.user_role != UserRole.SYS_ADMIN.value:
+            return jsonify({"error": "Unauthorized"}), 403
+            
+        inst_id = membership.institution_id if membership else None
+        
+        # If sys_admin without specific membership, they might need a way to see ALL pending or pick one
+        # For this demo, let's assume they pick via params or we return all institutional pending
+        
+        if not inst_id:
+             return jsonify([])
+             
+        pending = Document.query.filter_by(
+            institution_id=inst_id, 
+            institutional_status=InstitutionalStatus.PENDING
+        ).all()
+        
+        return jsonify([{
+            "id": d.id,
+            "title": d.title,
+            "uploader_name": d.uploader.name if d.uploader else "Unknown",
+            "upload_date": d.upload_date.isoformat()
+        } for d in pending]), 200
+
+    @app.route('/admin/users', methods=['GET'])
+    @role_required(UserRole.SYS_ADMIN.value)
+    def admin_get_users():
+        """Get all users for management"""
+        users = User.query.all()
+        return jsonify([{
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "role": u.role,
+            "created_at": u.created_at.isoformat() if hasattr(u, 'created_at') and u.created_at else None
+        } for u in users]), 200
+
+    @app.route('/admin/users/<int:user_id>/role', methods=['PUT'])
+    @role_required(UserRole.SYS_ADMIN.value)
+    def admin_update_user_role(user_id):
+        """Update a user's role"""
+        user = User.query.get_or_404(user_id)
+        new_role = request.json.get('role')
+        
+        if new_role not in [role.value for role in UserRole]:
+            return jsonify({"error": "Invalid role"}), 400
+            
+        user.role = new_role
+        db.session.commit()
+        return jsonify({"message": f"User role updated to {new_role}"}), 200
+
+    @app.route('/admin/stats', methods=['GET'])
+    @role_required(UserRole.SYS_ADMIN.value)
+    def admin_get_platform_stats():
+        """Get platform-wide statistics"""
+        total_users = User.query.count()
+        total_docs = Document.query.count()
+        approved_docs = Document.query.filter_by(status=DocumentStatus.APPROVED).count()
+        pending_docs = Document.query.filter_by(status=DocumentStatus.PENDING).count()
+        
+        # Institution stats
+        total_institutions = Institution.query.count()
+        
+        # ES Stats (optional)
+        es_status = "connected" if (es and es.ping()) else "disconnected"
+        
+        return jsonify({
+            "users": total_users,
+            "documents": {
+                "total": total_docs,
+                "approved": approved_docs,
+                "pending": pending_docs
+            },
+            "institutions": total_institutions,
+            "system": {
+                "elasticsearch": es_status,
+                "database": "connected"
+            }
         }), 200
 
     @app.route('/search', methods=['GET'])
@@ -264,7 +545,22 @@ def create_app():
                  # Let's stick to DB filtering for exact year for this demo or simple match if mapped.
         
         if not query and not institution_id and not year:
-             return jsonify([])
+             # Return latest documents if no query provided (for landing page)
+             limit = request.args.get('limit', 10, type=int)
+             latest_docs = Document.query.filter_by(status=DocumentStatus.APPROVED)\
+                 .order_by(Document.upload_date.desc()).limit(limit).all()
+             
+             results = [{
+                 "source": "database",
+                 "id": doc.id,
+                 "title": doc.title,
+                 "abstract": doc.abstract,
+                 "upload_date": doc.upload_date.isoformat(),
+                 "institution_id": doc.institution_id,
+                 "publication_date": doc.publication_date.isoformat() if doc.publication_date else None,
+                 "authors": [{"id": auth.id, "name": auth.name} for auth in doc.authors]
+             } for doc in latest_docs]
+             return jsonify(results)
         
         # 1. Try Elasticsearch first
         if es.ping() and query:
@@ -346,13 +642,58 @@ def create_app():
             if not target_doc:
                 return jsonify({"error": "Document not found"}), 404
             
-            # 2. Get all documents
-            all_docs = Document.query.all()
+            # 2. Try Elasticsearch More Like This (MLT) query first
+            if es.ping():
+                try:
+                    # ES MLT query looks for documents similar to the provided one based on text fields
+                    result = es.search(
+                        index=INDEX_NAME,
+                        body={
+                            "query": {
+                                "more_like_this": {
+                                    "fields": ["title", "abstract", "full_text", "keywords", "topics"],
+                                    "like": [
+                                        {
+                                            "_index": INDEX_NAME,
+                                            "_id": str(doc_id) # Using doc_id as ES id (assuming it matches)
+                                        }
+                                    ],
+                                    "min_term_freq": 1,
+                                    "max_query_terms": 25,
+                                    "min_doc_freq": 1
+                                }
+                            },
+                            "size": 5 # Get top 5 recommendations
+                        }
+                    )
+                    
+                    hits = result['hits']['hits']
+                    if hits:
+                        recommendations = []
+                        for hit in hits:
+                            recommended_doc = Document.query.get(int(hit['_id']))
+                            if recommended_doc and recommended_doc.status == DocumentStatus.APPROVED:
+                                recommendations.append({
+                                    "source": "elasticsearch",
+                                    "id": recommended_doc.id,
+                                    "title": recommended_doc.title,
+                                    "abstract": recommended_doc.abstract,
+                                    "similarity_score": hit['_score']
+                                })
+                        return jsonify(recommendations)
+                    else:
+                        print("ES MLT returned no results. Falling back to DB TF-IDF.")
+                except Exception as e:
+                    print(f"ES MLT failed: {e}. Falling back to DB TF-IDF.")
+            
+            # 3. Fallback to Database + TF-IDF (Slow)
+            print("Using Database Fallback for Recommendations")
+            all_docs = Document.query.filter(Document.status == DocumentStatus.APPROVED).all()
             
             if len(all_docs) < 2:
                 return jsonify([])  # Not enough documents to recommend
             
-            # 3. Extract text for all documents
+            # Extract text for all documents
             from sklearn.feature_extraction.text import TfidfVectorizer
             from sklearn.metrics.pairwise import cosine_similarity
             
@@ -369,7 +710,11 @@ def create_app():
                     # Skip documents that can't be read
                     continue
             
-            # 4. Vectorize and calculate similarity
+            if doc_id not in doc_ids:
+                 # If target document couldn't be parsed, it won't be in doc_ids
+                 return jsonify([])
+                 
+            # Vectorize and calculate similarity
             vectorizer = TfidfVectorizer(max_features=100)
             tfidf_matrix = vectorizer.fit_transform(doc_texts)
             
@@ -380,18 +725,23 @@ def create_app():
             similarities = cosine_similarity(tfidf_matrix[target_idx:target_idx+1], tfidf_matrix).flatten()
             
             # Get top 5 similar documents (excluding the target itself)
-            similar_indices = similarities.argsort()[-6:-1][::-1]
+            # Find the top N indices, then filter out the self-reference
+            similar_indices = similarities.argsort()[-6:][::-1]
             
             recommendations = []
+            count = 0
             for idx in similar_indices:
-                if doc_ids[idx] != doc_id:  # Exclude the target document
+                if doc_ids[idx] != doc_id and count < 5:  # Exclude target document, limit to 5
                     doc = Document.query.get(doc_ids[idx])
-                    recommendations.append({
-                        "id": doc.id,
-                        "title": doc.title,
-                        "abstract": doc.abstract,
-                        "similarity_score": float(similarities[idx])
-                    })
+                    if doc:
+                         recommendations.append({
+                             "source": "database",
+                             "id": doc.id,
+                             "title": doc.title,
+                             "abstract": doc.abstract,
+                             "similarity_score": float(similarities[idx])
+                         })
+                         count += 1
             
             return jsonify(recommendations)
             
@@ -652,7 +1002,6 @@ def create_app():
                 })
                 
         # 3. Downloads by Institution
-        # Complex join: DownloadLog -> Document -> Institution
         inst_stats_query = db.session.query(
             Institution.name,
             func.count(DownloadLog.id).label('count')
@@ -662,11 +1011,28 @@ def create_app():
          
         inst_stats = [{"name": name, "count": count} for name, count in inst_stats_query]
         
+        # 4. Total Views Across Platform
+        total_views = db.session.query(func.sum(Document.view_count)).scalar() or 0
+        total_docs = Document.query.count()
+        
         return jsonify({
             "total_downloads": total_downloads,
+            "total_views": total_views,
+            "total_documents": total_docs,
             "top_documents": top_docs,
             "institution_downloads": inst_stats
         }), 200
+
+    @app.route('/analytics/trending-topics', methods=['GET'])
+    def get_trending_topics():
+        """Extract popular keywords as trending topics"""
+        from models import TopicScore
+        trending = db.session.query(
+            TopicScore.topic,
+            func.count(TopicScore.id).label('count')
+        ).group_by(TopicScore.topic).order_by(func.count(TopicScore.id).desc()).limit(10).all()
+        
+        return jsonify([{"topic": t, "popularity": c} for t, c in trending]), 200
 
     # ========== SAVED SEARCHES & ALERTS ENDPOINTS ==========
 

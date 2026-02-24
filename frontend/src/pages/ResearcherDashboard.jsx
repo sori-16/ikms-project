@@ -1,4 +1,13 @@
-// Created by: Soreti (Team Leader) - Demo Implementation
+/**
+ * IKMS Frontend - Researcher Dashboard
+ * Created by: Soreti (Team Leader)
+ * DO NOT MODIFY WITHOUT PERMISSION
+ * 
+ * This file contains:
+ * - Publication upload management
+ * - Saved searches and alerts feed
+ * - Personalized activity tracking
+ */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -13,7 +22,9 @@ function ResearcherDashboard() {
     const [message, setMessage] = useState('');
     const [myDocuments, setMyDocuments] = useState([]);
     const [savedSearches, setSavedSearches] = useState([]);
+    const [stats, setStats] = useState(null);
     const navigate = useNavigate();
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
     useEffect(() => {
         const currentUser = getUser();
@@ -24,11 +35,23 @@ function ResearcherDashboard() {
         setUser(currentUser);
         fetchMyDocuments();
         fetchSavedSearches();
+        fetchStats();
     }, [navigate]);
+
+    const fetchStats = async () => {
+        try {
+            const response = await axios.get(`${apiUrl}/researcher/stats`, {
+                headers: getAuthHeaders()
+            });
+            setStats(response.data);
+        } catch (error) {
+            console.error('Error fetching stats:', error);
+        }
+    };
 
     const fetchMyDocuments = async () => {
         try {
-            const response = await axios.get('http://localhost:5000/search?q=', {
+            const response = await axios.get(`${apiUrl}/search?q=`, {
                 headers: getAuthHeaders()
             });
             setMyDocuments(response.data);
@@ -39,7 +62,7 @@ function ResearcherDashboard() {
 
     const fetchSavedSearches = async () => {
         try {
-            const response = await axios.get('http://localhost:5000/saved-searches', {
+            const response = await axios.get(`${apiUrl}/saved-searches`, {
                 headers: getAuthHeaders()
             });
             setSavedSearches(response.data);
@@ -50,7 +73,7 @@ function ResearcherDashboard() {
 
     const deleteSearch = async (id) => {
         try {
-            await axios.delete(`http://localhost:5000/saved-searches/${id}`, {
+            await axios.delete(`${apiUrl}/saved-searches/${id}`, {
                 headers: getAuthHeaders()
             });
             fetchSavedSearches();
@@ -61,7 +84,7 @@ function ResearcherDashboard() {
 
     const clearAlerts = async (id) => {
         try {
-            await axios.post(`http://localhost:5000/saved-searches/${id}/clear-alerts`, {}, {
+            await axios.post(`${apiUrl}/saved-searches/${id}/clear-alerts`, {}, {
                 headers: getAuthHeaders()
             });
             fetchSavedSearches();
@@ -96,7 +119,7 @@ function ResearcherDashboard() {
         formData.append('uploader_id', user.id);
 
         try {
-            await axios.post('http://localhost:5000/upload', formData, {
+            await axios.post(`${apiUrl}/upload`, formData, {
                 headers: {
                     ...getAuthHeaders(),
                     'Content-Type': 'multipart/form-data'
@@ -123,6 +146,39 @@ function ResearcherDashboard() {
         return <span className={`status-badge ${badge.class}`}>{badge.text}</span>;
     };
 
+    const handleRevision = async (docId) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf';
+        input.onchange = async (e) => {
+            const revFile = e.target.files[0];
+            if (!revFile) return;
+
+            setUploading(true);
+            setMessage('Submitting revision...');
+
+            const formData = new FormData();
+            formData.append('file', revFile);
+
+            try {
+                await axios.post(`${apiUrl}/documents/${docId}/revision`, formData, {
+                    headers: {
+                        ...getAuthHeaders(),
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
+                setMessage('✓ Revision submitted successfully!');
+                fetchMyDocuments();
+                fetchStats();
+            } catch (error) {
+                setMessage('✗ Revision failed: ' + (error.response?.data?.error || 'Unknown error'));
+            } finally {
+                setUploading(false);
+            }
+        };
+        input.click();
+    };
+
     if (!user) return null;
 
     return (
@@ -136,9 +192,34 @@ function ResearcherDashboard() {
                 <button onClick={logout} className="btn-secondary">Logout</button>
             </div>
 
-            <div className="dashboard-grid">
+            <div className="dashboard-grid" style={{ gridTemplateColumns: 'minmax(0, 1fr) 350px', gap: '2rem' }}>
                 {/* Main Content: Document Management */}
-                <div className="main-panels">
+                <div className="main-panels" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                    {/* Impact Analytics Panel */}
+                    <div className="glass-panel" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                        <h2 style={{ marginBottom: '1.5rem', fontSize: '1.4rem' }}>Research Impact Analysis</h2>
+                        <div style={{ display: 'flex', gap: '3rem', flexWrap: 'wrap' }}>
+                            <div className="stat-card-mini">
+                                <span style={{ display: 'block', fontSize: '2.5rem', fontWeight: 800, color: 'var(--accent-primary)' }}>
+                                    {stats?.total_publications || 0}
+                                </span>
+                                <span style={{ opacity: 0.6, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px' }}>Publications</span>
+                            </div>
+                            <div className="stat-card-mini" style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '3rem' }}>
+                                <span style={{ display: 'block', fontSize: '2.5rem', fontWeight: 800, color: '#10b981' }}>
+                                    {stats?.total_downloads || 0}
+                                </span>
+                                <span style={{ opacity: 0.6, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px' }}>Total Downloads</span>
+                            </div>
+                            <div className="stat-card-mini" style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '3rem' }}>
+                                <span style={{ display: 'block', fontSize: '2.5rem', fontWeight: 800, color: '#3b82f6' }}>
+                                    {stats?.total_views || 0}
+                                </span>
+                                <span style={{ opacity: 0.6, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px' }}>Total Views</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="glass-panel">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
                             <div style={{ background: 'var(--accent-primary)', padding: '0.8rem', borderRadius: '12px' }}>
@@ -200,7 +281,18 @@ function ResearcherDashboard() {
                                                 Uploaded on {new Date(doc.upload_date).toLocaleDateString()}
                                             </p>
                                         </div>
-                                        {getStatusBadge(doc.status || 'pending')}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                            {getStatusBadge(doc.status || 'pending')}
+                                            {doc.status === 'rejected' && (
+                                                <button
+                                                    onClick={() => handleRevision(doc.id)}
+                                                    className="btn-primary-small"
+                                                    style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                                                >
+                                                    Submit Revision
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>

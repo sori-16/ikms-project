@@ -10,18 +10,23 @@ const DocumentDetail = () => {
     const [recommendations, setRecommendations] = useState([]);
     const [loading, setLoading] = useState(true);
     const [message, setMessage] = useState('');
+    const [citations, setCitations] = useState(null);
 
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
             try {
                 // Fetch Doc Details
-                const docRes = await axios.get(`http://localhost:5000/documents/${id}`);
+                const docRes = await axios.get(`${apiUrl}/documents/${id}`);
                 setDoc(docRes.data);
 
                 // Fetch Recommendations
-                const recRes = await axios.get(`http://localhost:5000/recommend/${id}`);
+                const recRes = await axios.get(`${apiUrl}/recommend/${id}`);
                 setRecommendations(recRes.data);
+
+                // Fallback citation generation if backend doesn't have it
+                generateCitations(docRes.data);
             } catch (e) {
                 console.error('Failed to fetch document data:', e);
             } finally {
@@ -31,31 +36,55 @@ const DocumentDetail = () => {
         fetchData();
     }, [id]);
 
+    const generateCitations = (docData) => {
+        if (!docData) return;
+        const year = docData.upload_date ? new Date(docData.upload_date).getFullYear() : 'n.d.';
+        const authors = docData.authors?.map(a => a.name).join(', ') || 'Unknown Author';
+        const title = docData.title;
+        const institution = docData.institution || 'IKMS';
+
+        setCitations({
+            apa: `${authors} (${year}). ${title}. ${institution}.`,
+            mla: `${authors}. "${title}." ${institution}, ${year}.`,
+            bibtex: `@article{ikms_${id},\n  author = {${authors}},\n  title = {${title}},\n  publisher = {${institution}},\n  year = {${year}}\n}`
+        });
+    };
+
     const handleDownload = async () => {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
         try {
-            const res = await axios.post(`http://localhost:5000/documents/${id}/download`, {}, {
+            const res = await axios.post(`${apiUrl}/documents/${id}/download`, {}, {
                 headers: getAuthHeaders()
             });
-            window.open(`http://localhost:5000${res.data.file_url}`, '_blank');
+            window.open(`${apiUrl}${res.data.file_url}`, '_blank');
             setMessage('✓ Download started');
+            setTimeout(() => setMessage(''), 3000);
         } catch (e) {
             setMessage('✗ Failed to track download');
         }
     };
 
     const handleBookmark = async () => {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
         if (!isAuthenticated()) {
             setMessage('! Please login to bookmark');
             return;
         }
         try {
-            await axios.post('http://localhost:5000/bookmarks', { document_id: id }, {
+            await axios.post(`${apiUrl}/bookmarks`, { document_id: id }, {
                 headers: getAuthHeaders()
             });
             setMessage('✓ Added to Library');
+            setTimeout(() => setMessage(''), 3000);
         } catch (e) {
             setMessage('✗ Failed to bookmark');
         }
+    };
+
+    const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+        setMessage('✓ Citation copied to clipboard');
+        setTimeout(() => setMessage(''), 3000);
     };
 
     if (loading) return <div className="loading-state">Retrieving research details...</div>;
@@ -128,13 +157,38 @@ const DocumentDetail = () => {
                         {doc.abstract}
                     </p>
                 </div>
+
+                {citations && (
+                    <div style={{ marginTop: '3rem', paddingTop: '2rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                        <h3 style={{ marginBottom: '1.5rem', fontSize: '1.5rem' }}>Cite this Research</h3>
+                        <div className="citations-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
+                            {['APA', 'MLA', 'BibTeX'].map((format) => (
+                                <div key={format} className="glass-panel" style={{ padding: '1.2rem', background: 'rgba(255,255,255,0.02)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
+                                        <h4 style={{ margin: 0, opacity: 0.6, fontSize: '0.8rem', textTransform: 'uppercase' }}>{format} Format</h4>
+                                        <button
+                                            onClick={() => copyToClipboard(citations[format.toLowerCase()])}
+                                            className="btn-secondary-small"
+                                            style={{ padding: '4px 10px', fontSize: '0.7rem' }}
+                                        >
+                                            Copy
+                                        </button>
+                                    </div>
+                                    <code style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', wordBreak: 'break-all' }}>
+                                        {citations[format.toLowerCase()]}
+                                    </code>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
-            <h2 className="section-title" style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <h2 className="section-title" style={{ marginTop: '4rem', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
                 <RefreshCw size={24} color="var(--accent-primary)" />
                 Commonly Cited & Related Research
             </h2>
-            <div className="search-layout" style={{ gridTemplateColumns: '1fr 1fr' }}>
+            <div className="search-layout" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                 {recommendations.map(rec => (
                     <div key={rec.id} className="doc-card-enhanced" style={{ margin: 0 }}>
                         <Link to={`/document/${rec.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
@@ -150,7 +204,7 @@ const DocumentDetail = () => {
                 ))}
                 {recommendations.length === 0 && <p className="empty-state">No similar research found for this architecture.</p>}
             </div>
-        </div>
+        </div >
     );
 };
 

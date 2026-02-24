@@ -3,7 +3,7 @@ IKMS Authentication & Authorization
 Created by: Soreti (Team Leader)
 DO NOT MODIFY WITHOUT PERMISSION
 
-Provides:
+This file contains:
 - Password hashing (bcrypt)
 - JWT token generation/verification
 - @login_required decorator

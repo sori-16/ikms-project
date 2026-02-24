@@ -3,7 +3,7 @@ IKMS Utility Functions
 Created by: Soreti (Team Leader)
 DO NOT MODIFY WITHOUT PERMISSION
 
-Functions:
+This file contains:
 - extract_text_from_pdf: Extract text from PDF files
 - clean_text: Preprocess text (lowercase, remove stopwords)
 """

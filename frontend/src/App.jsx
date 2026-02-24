@@ -1,4 +1,13 @@
-// Created by: Soreti (Team Leader) - Demo Implementation
+/**
+ * IKMS Frontend - Application Root
+ * Created by: Soreti (Team Leader)
+ * DO NOT MODIFY WITHOUT PERMISSION
+ * 
+ * This file contains:
+ * - Application routing logic
+ * - Protected and Public route definitions
+ * - Global layout management
+ */
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { isAuthenticated, getUserRole } from './utils/auth';
 import Navbar from './components/Navbar';
@@ -14,6 +23,7 @@ import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import MyLibrary from './pages/MyLibrary';
 import AuthorProfile from './pages/AuthorProfile';
 import InstitutionDashboard from './pages/InstitutionDashboard';
+import SysAdminDashboard from './pages/SysAdminDashboard';
 import './App.css';
 
 // Protected Route Component
@@ -63,6 +73,15 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['moderator', 'sys_admin']}>
                 <ModeratorDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/sysadmin-dashboard"
+            element={
+              <ProtectedRoute allowedRoles={['sys_admin']}>
+                <SysAdminDashboard />
               </ProtectedRoute>
             }
           />

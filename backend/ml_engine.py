@@ -3,10 +3,10 @@ IKMS Machine Learning Engine
 Created by: Soreti (Team Leader)
 DO NOT MODIFY WITHOUT PERMISSION
 
-ML Functions:
+This file contains:
 - extract_keywords: TF-IDF keyword extraction
 - assign_topics: LDA topic modeling
-- get_recommendations: Content-based similarity (Cosine)
+- find_recommendations: Content-based similarity (Cosine)
 """
 
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer

@@ -5,10 +5,10 @@ DO NOT MODIFY WITHOUT PERMISSION
 
 Defines:
 - User (with RBAC roles)
-- Institution
-- Author
-- Document (with workflow status)
-- SavedSearch
+- Institution (with logo and metadata)
+- Author (with normalized names and profiling)
+- Document (with full analytics and workflow)
+- InstitutionMembership & SearchAlerts
 """
 
 from flask_sqlalchemy import SQLAlchemy
@@ -58,9 +58,13 @@ class User(db.Model):
 class Institution(db.Model):
     __tablename__ = 'institutions'
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(200), nullable=False)
+    name = db.Column(db.String(200), nullable=False, unique=True)
     description = db.Column(db.Text)
     location = db.Column(db.String(200))
+    logo_path = db.Column(db.String(255))
+    website = db.Column(db.String(255))
+    established_year = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     documents = db.relationship('Document', backref='institution', lazy=True)
 
@@ -68,6 +72,8 @@ class Author(db.Model):
     __tablename__ = 'authors'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    normalized_name = db.Column(db.String(100)) # For grouping variations
+    email = db.Column(db.String(255), nullable=True)
     affiliation_id = db.Column(db.Integer, db.ForeignKey('institutions.id'))
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True) # Linked researcher account
     
@@ -80,13 +86,19 @@ class Document(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(255), nullable=False)
     file_path = db.Column(db.String(255), nullable=False)
+    file_size_bytes = db.Column(db.BigInteger)
     abstract = db.Column(db.Text)
     upload_date = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # New Fields for Phase 4 & 11
+    # Analytics & Workflow
     status = db.Column(db.Enum(DocumentStatus), default=DocumentStatus.PENDING)
     institutional_status = db.Column(db.Enum(InstitutionalStatus), default=InstitutionalStatus.PENDING)
     publication_date = db.Column(db.DateTime)
+    download_count = db.Column(db.Integer, default=0)
+    view_count = db.Column(db.Integer, default=0)
+    moderation_notes = db.Column(db.Text)
+    approved_at = db.Column(db.DateTime)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     
     institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'))
     uploader_id = db.Column(db.Integer, db.ForeignKey('users.id'))
@@ -122,13 +134,30 @@ class DownloadLog(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True) # Nullable for public downloads
     downloaded_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-class SavedDocument(db.Model):
-    __tablename__ = 'saved_documents'
+# Institution Membership & Alerts Table
+class InstitutionMembership(db.Model):
+    __tablename__ = 'institution_memberships'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'), nullable=False)
+    role = db.Column(db.String(50), default='member')
+    verified = db.Column(db.Boolean, default=False)
+    verified_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class SearchAlert(db.Model):
+    __tablename__ = 'search_alerts'
+    id = db.Column(db.Integer, primary_key=True)
+    search_id = db.Column(db.Integer, db.ForeignKey('saved_searches.id'), nullable=False)
+    doc_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class ModerationLog(db.Model):
+    __tablename__ = 'moderation_logs'
+    id = db.Column(db.Integer, primary_key=True)
     document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
-    saved_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # Ensure a user can only save a doc once
-    __table_args__ = (db.UniqueConstraint('user_id', 'document_id', name='unique_user_doc_save'),)
+    moderator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    action = db.Column(db.String(50)) # 'approved', 'rejected', 'revision'
+    notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

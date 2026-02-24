@@ -10,7 +10,9 @@ function InstitutionDashboard() {
     const [pendingDocs, setPendingDocs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState(null);
+    const [stats, setStats] = useState(null);
     const navigate = useNavigate();
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
     useEffect(() => {
         const currentUser = getUser();
@@ -20,11 +22,23 @@ function InstitutionDashboard() {
         }
         setUser(currentUser);
         fetchPending();
+        fetchStats();
     }, [navigate]);
+
+    const fetchStats = async () => {
+        try {
+            const response = await axios.get(`${apiUrl}/institutions/my/analytics`, {
+                headers: getAuthHeaders()
+            });
+            setStats(response.data);
+        } catch (error) {
+            console.error('Error fetching institutional stats:', error);
+        }
+    };
 
     const fetchPending = async () => {
         try {
-            const response = await axios.get('http://localhost:5000/institutions/my/pending', {
+            const response = await axios.get(`${apiUrl}/institutions/my/pending`, {
                 headers: getAuthHeaders()
             });
             setPendingDocs(response.data);
@@ -37,7 +51,7 @@ function InstitutionDashboard() {
 
     const handleAction = async (docId, status) => {
         try {
-            await axios.post(`http://localhost:5000/documents/${docId}/institutional-verify`, { status }, {
+            await axios.post(`${apiUrl}/documents/${docId}/institutional-verify`, { status }, {
                 headers: getAuthHeaders()
             });
             fetchPending();
@@ -61,7 +75,34 @@ function InstitutionDashboard() {
                 <button onClick={logout} className="btn-secondary">Logout</button>
             </div>
 
-            <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr' }}>
+            <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr', gap: '2rem' }}>
+                {/* Analytics Snapshot */}
+                <div className="glass-panel" style={{ background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.1) 100%)', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                    <h2 style={{ marginBottom: '1.5rem', fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Building size={20} /> Institutional Performance Snapshot
+                    </h2>
+                    <div style={{ display: 'flex', gap: '3rem', flexWrap: 'wrap' }}>
+                        <div className="stat-card-mini">
+                            <span style={{ display: 'block', fontSize: '2.5rem', fontWeight: 800, color: '#3b82f6' }}>
+                                {stats?.total_documents || 0}
+                            </span>
+                            <span style={{ opacity: 0.6, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px' }}>Research Papers</span>
+                        </div>
+                        <div className="stat-card-mini" style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '3rem' }}>
+                            <span style={{ display: 'block', fontSize: '2.5rem', fontWeight: 800, color: '#10b981' }}>
+                                {stats?.total_downloads || 0}
+                            </span>
+                            <span style={{ opacity: 0.6, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px' }}>Global Downloads</span>
+                        </div>
+                        <div className="stat-card-mini" style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '3rem' }}>
+                            <span style={{ display: 'block', fontSize: '2.5rem', fontWeight: 800, color: '#a855f7' }}>
+                                {stats?.active_researchers || 0}
+                            </span>
+                            <span style={{ opacity: 0.6, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px' }}>Active Researchers</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="glass-panel">
                     <h2 style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <FileText size={20} /> Pending Institutional Verification
