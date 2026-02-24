@@ -1,155 +1,127 @@
-// Created by: Soreti (Team Leader) - Demo Implementation
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { User, Mail, Lock, Building2, ArrowRight } from 'lucide-react';
 import { setToken, setUser } from '../utils/auth';
 import './Auth.css';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 function Register() {
-    const [formData, setFormData] = useState({
-        name: '',
-        email: '',
-        password: '',
-        confirmPassword: '',
-        role: 'researcher'
-    });
-    const [error, setError] = useState('');
+    const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', role: 'researcher', institution_id: '' });
+    const [institutions, setInstitutions] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
     const navigate = useNavigate();
 
-    const handleChange = (e) => {
-        setFormData({
-            ...formData,
-            [e.target.name]: e.target.value
-        });
-    };
+    useEffect(() => {
+        axios.get(`${API}/institutions`).then(r => setInstitutions(r.data)).catch(() => { });
+    }, []);
 
-    const handleSubmit = async (e) => {
+    const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+
+    const handleRegister = async (e) => {
         e.preventDefault();
-        setError('');
-
-        // Validate passwords match
-        if (formData.password !== formData.confirmPassword) {
-            setError('Passwords do not match');
+        if (form.password !== form.confirm) {
+            setError('Passwords do not match.');
             return;
         }
-
         setLoading(true);
-
+        setError('');
         try {
-            const { confirmPassword, ...registerData } = formData;
-            const response = await axios.post('http://localhost:5000/register', registerData);
-
-            // Auto-login after registration
-            setToken(response.data.token);
-            setUser(response.data.user);
-
-            // Redirect based on role
-            const role = response.data.user.role;
-            if (role === 'moderator' || role === 'sys_admin') {
-                navigate('/moderator-dashboard');
-            } else {
-                navigate('/researcher-dashboard');
-            }
+            const res = await axios.post(`${API}/register`, {
+                name: form.name,
+                email: form.email,
+                password: form.password,
+                role: form.role,
+                institution_id: form.institution_id || null
+            });
+            setToken(res.data.token);
+            setUser(res.data.user);
+            navigate('/researcher-dashboard');
         } catch (err) {
-            setError(err.response?.data?.error || 'Registration failed. Please try again.');
+            setError(err.response?.data?.error || 'Registration failed.');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="auth-container">
-            <div className="auth-card">
-                <div className="auth-brand">
-                    <span className="auth-logo">✦ IKMS</span>
-                </div>
+        <div className="auth-page">
+            <div className="auth-card auth-card-wide card">
+                <div className="auth-logo">IK<span>MS</span></div>
                 <h1 className="auth-title">Create Account</h1>
-                <p className="auth-subtitle">Join Ethiopia's national research community</p>
+                <p className="auth-subtitle">Join the Ethiopian Open Access Research Portal</p>
 
-                {error && <div className="error-message">{error}</div>}
+                {error && <div className="message-banner error">{error}</div>}
 
-                <form onSubmit={handleSubmit} className="auth-form">
-                    <div className="form-group">
-                        <label htmlFor="name">Full Name</label>
-                        <input
-                            type="text"
-                            id="name"
-                            name="name"
-                            value={formData.name}
-                            onChange={handleChange}
-                            required
-                            placeholder="Dr. Abebe Bikila"
-                        />
+                <form onSubmit={handleRegister} className="auth-form">
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label className="input-label" htmlFor="name">
+                                <User size={14} style={{ display: 'inline', marginRight: '4px' }} /> Full Name
+                            </label>
+                            <input id="name" name="name" type="text" className="input-field" placeholder="Dr. Ababu Kebede" value={form.name} onChange={handleChange} required />
+                        </div>
+                        <div className="form-group">
+                            <label className="input-label" htmlFor="email">
+                                <Mail size={14} style={{ display: 'inline', marginRight: '4px' }} /> Email Address
+                            </label>
+                            <input id="email" name="email" type="email" className="input-field" placeholder="you@university.edu.et" value={form.email} onChange={handleChange} required autoComplete="email" />
+                        </div>
+                    </div>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label className="input-label" htmlFor="password">
+                                <Lock size={14} style={{ display: 'inline', marginRight: '4px' }} /> Password
+                            </label>
+                            <input id="password" name="password" type="password" className="input-field" placeholder="Min. 8 characters" value={form.password} onChange={handleChange} required autoComplete="new-password" />
+                        </div>
+                        <div className="form-group">
+                            <label className="input-label" htmlFor="confirm">
+                                <Lock size={14} style={{ display: 'inline', marginRight: '4px' }} /> Confirm Password
+                            </label>
+                            <input id="confirm" name="confirm" type="password" className="input-field" placeholder="Repeat password" value={form.confirm} onChange={handleChange} required />
+                        </div>
+                    </div>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label className="input-label" htmlFor="role">Account Type</label>
+                            <select id="role" name="role" className="input-field" value={form.role} onChange={handleChange}>
+                                <option value="researcher">Researcher</option>
+                                <option value="inst_admin">Institution Admin</option>
+                            </select>
+                        </div>
+                        <div className="form-group">
+                            <label className="input-label" htmlFor="institution_id">
+                                <Building2 size={14} style={{ display: 'inline', marginRight: '4px' }} /> Institution (Optional)
+                            </label>
+                            <select id="institution_id" name="institution_id" className="input-field" value={form.institution_id} onChange={handleChange}>
+                                <option value="">Select Institution...</option>
+                                {institutions.map(inst => (
+                                    <option key={inst.id} value={inst.id}>{inst.name}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
 
-                    <div className="form-group">
-                        <label htmlFor="email">Email address</label>
-                        <input
-                            type="email"
-                            id="email"
-                            name="email"
-                            value={formData.email}
-                            onChange={handleChange}
-                            required
-                            placeholder="you@institution.edu.et"
-                        />
+                    <div className="auth-terms-check">
+                        <input type="checkbox" id="terms-agree" required />
+                        <label htmlFor="terms-agree">
+                            I agree to the IKMS <a href="#terms">Terms of Use</a> and{' '}
+                            <a href="#open-access">Open Access Policy</a>.
+                        </label>
                     </div>
 
-                    <div className="form-group">
-                        <label htmlFor="password">Password</label>
-                        <input
-                            type="password"
-                            id="password"
-                            name="password"
-                            value={formData.password}
-                            onChange={handleChange}
-                            required
-                            minLength="6"
-                            placeholder="At least 6 characters"
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label htmlFor="confirmPassword">Confirm Password</label>
-                        <input
-                            type="password"
-                            id="confirmPassword"
-                            name="confirmPassword"
-                            value={formData.confirmPassword}
-                            onChange={handleChange}
-                            required
-                            placeholder="Re-enter password"
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label htmlFor="role">Role</label>
-                        <select
-                            id="role"
-                            name="role"
-                            value={formData.role}
-                            onChange={handleChange}
-                            className="input-field"
-                        >
-                            <option value="researcher">Researcher</option>
-                            <option value="moderator">Moderator</option>
-                            <option value="inst_admin">Institution Admin</option>
-                        </select>
-                    </div>
-
-                    <button
-                        type="submit"
-                        className="btn-auth"
-                        disabled={loading}
-                    >
-                        {loading ? 'Creating account...' : 'Create Account →'}
+                    <button type="submit" className="btn btn-primary w-full" style={{ marginTop: '0.5rem' }} disabled={loading}>
+                        {loading ? 'Creating Account...' : <><ArrowRight size={17} /> Create Account</>}
                     </button>
                 </form>
 
-                <p className="auth-footer">
-                    Already have an account? <Link to="/login">Sign in here</Link>
-                </p>
+                <div className="auth-divider"><span>Already have an account?</span></div>
+                <Link to="/login" className="btn btn-secondary w-full" style={{ justifyContent: 'center' }}>
+                    Sign In
+                </Link>
             </div>
         </div>
     );

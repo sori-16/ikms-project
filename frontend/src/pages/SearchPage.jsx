@@ -1,57 +1,71 @@
 /**
- * IKMS Frontend - Search & Discovery Page
- * Created by: Soreti (Team Leader)
- * DO NOT MODIFY WITHOUT PERMISSION
- * 
- * This file contains:
- * - Search bar with advanced filters
- * - Elasticsearch-powered publication discovery
- * - Institution and Year based filtering
+ * IKMS – Search & Discovery Page (Redesigned)
+ * Light theme, Ethiopian identity, fixed filter state bugs
  */
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import { Search, Filter, RefreshCw, Calendar, Building2, BookOpen, Bell } from 'lucide-react';
+import { Search, Filter, RefreshCw, Calendar, Building2, Download, ArrowRight, Bell, ChevronDown, ChevronUp, BookOpen, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import './Search.css';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 function SearchPage() {
-    // State
-    const [query, setQuery] = useState('');
+    const [searchParams] = useSearchParams();
+
+    // Core state
+    const [query, setQuery] = useState(searchParams.get('q') || '');
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [hasSearched, setHasSearched] = useState(!!searchParams.get('q'));
+
+    // Filter state (FIXED: was missing before)
+    const [selectedInst, setSelectedInst] = useState('');
+    const [selectedYear, setSelectedYear] = useState('');
+    const [sortBy, setSortBy] = useState('relevance');
+    const [filtersOpen, setFiltersOpen] = useState(false);
+
+    // Landing page data
     const [institutions, setInstitutions] = useState([]);
-
-    // State for initial landing page content
-    const [hasSearched, setHasSearched] = useState(false);
     const [latestResearch, setLatestResearch] = useState([]);
+    const [topics] = useState([
+        'Malaria', 'Maternal Health', 'HIV/AIDS', 'Tuberculosis',
+        'Nutrition', 'Public Health', 'Sustainable Agriculture', 'AI in Healthcare',
+        'Environmental Science', 'Water & Sanitation', 'Epidemiology', 'Blockchain'
+    ]);
 
-    // Fetch institutions and latest research on component mount
+    // Fetch initial data
     useEffect(() => {
         const fetchInitialData = async () => {
             try {
-                // Fetch institutions
-                const instResponse = await axios.get(`${import.meta.env.VITE_API_URL}/institutions`);
-                setInstitutions(instResponse.data);
-
-                // Fetch latest research for landing page
-                const latestResponse = await axios.get(`${import.meta.env.VITE_API_URL}/latest-research`);
-                setLatestResearch(latestResponse.data);
+                const [instRes, latestRes] = await Promise.all([
+                    axios.get(`${API}/institutions`),
+                    axios.get(`${API}/latest-research`)
+                ]);
+                setInstitutions(instRes.data);
+                setLatestResearch(latestRes.data);
             } catch (error) {
                 console.error('Failed to fetch initial data:', error);
             }
         };
         fetchInitialData();
+
+        // If URL has a search query, auto-search
+        if (searchParams.get('q')) {
+            handleSearch(null, searchParams.get('q'));
+        }
     }, []);
 
-    // Placeholder for handleSearch function, assuming it will be implemented later
-    const handleSearch = async (e) => {
-        e.preventDefault();
+    const handleSearch = async (e, overrideQuery) => {
+        if (e) e.preventDefault();
+        const searchQuery = overrideQuery ?? query;
         setLoading(true);
         setHasSearched(true);
         try {
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/search`, {
+            const response = await axios.get(`${API}/search`, {
                 params: {
-                    q: query,
+                    q: searchQuery,
                     institution_id: selectedInst,
                     year: selectedYear
                 }
@@ -65,224 +79,381 @@ function SearchPage() {
         }
     };
 
-
     const resetFilters = () => {
         setQuery('');
         setSelectedInst('');
         setSelectedYear('');
         setResults([]);
+        setHasSearched(false);
+        setSortBy('relevance');
+    };
+
+    const handleTopicClick = (topic) => {
+        setQuery(topic);
+        setHasSearched(true);
+        setLoading(true);
+        axios.get(`${API}/search`, { params: { q: topic } })
+            .then(res => setResults(res.data))
+            .catch(() => setResults([]))
+            .finally(() => setLoading(false));
+    };
+
+    const getSortedResults = () => {
+        const r = [...results];
+        if (sortBy === 'date') return r.sort((a, b) => new Date(b.upload_date) - new Date(a.upload_date));
+        if (sortBy === 'downloads') return r.sort((a, b) => (b.download_count || 0) - (a.download_count || 0));
+        return r; // relevance – keep original order from backend
+    };
+
+    const isNewPaper = (dateStr) => {
+        if (!dateStr) return false;
+        return (Date.now() - new Date(dateStr)) < 7 * 24 * 60 * 60 * 1000;
     };
 
     return (
-        <div className="container">
-            {/* Hero Section - Dynamic Height */}
-            <div className={`hero-section ${hasSearched ? 'hero-compact' : ''}`}>
-                <h1 className="hero-title">
-                    {hasSearched ? 'IKMS National Portal' : 'Institutional Knowledge Management System'}
-                </h1>
+        <div className="page-wrapper">
+            <div className="container" style={{ paddingTop: '2rem', paddingBottom: '3rem' }}>
 
-                {!hasSearched && (
-                    <div className="amharic-title-hero"> የኢትዮጵያ ብሄራዊ የእውቀት እና የመረጃ አያያዝ ስርዓት </div>
-                )}
-
-                <p className="hero-subtitle">
-                    Search, Analyze, and Discover Knowledge from Ethiopia's Top Research Institutions.
-                </p>
-
-                {/* Search Bar in Hero */}
-                <form onSubmit={handleSearch} className="search-bar-container" style={{ maxWidth: '600px', margin: '0 auto', position: 'relative' }}>
-                    <Search className="search-icon-inside" size={20} style={{ position: 'absolute', left: '1.2rem', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
-                    <input
-                        type="text"
-                        placeholder="Search for research topics..."
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        className="search-input"
-                        style={{ width: '100%', padding: '1.25rem 1.25rem 1.25rem 3.5rem', borderRadius: '50px', border: '1px solid rgba(255,255,255,0.1)', fontSize: '1.1rem', background: 'rgba(0,0,0,0.3)', color: 'white' }}
-                    />
-                    <button type="submit" className="search-button" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'var(--accent-primary)', border: 'none', color: 'white', padding: '0.6rem 1.5rem', borderRadius: '30px', cursor: 'pointer', fontWeight: '600' }}>
-                        Search
-                    </button>
-                </form>
-
-                <div className="trending-container">
-                    <span className="trending-label">Trending:</span>
-                    <button onClick={() => setQuery('AI in Healthcare')} className="trending-tag">#AI-Health</button>
-                    <button onClick={() => setQuery('Sustainable Agriculture')} className="trending-tag">#SustainableAgri</button>
-                    <button onClick={() => setQuery('Ethereum Blockchain')} className="trending-tag">#Blockchain</button>
-                    <button onClick={() => setQuery('Public Health Policy')} className="trending-tag">#PublicHealth</button>
-                </div>
-
-                {!hasSearched && (
-                    <div className="hero-stats">
-                        <div className="stat-item">
-                            <span className="stat-value">150+</span>
-                            <span className="stat-label">Papers</span>
+                {/* ── Hero / Search Header ── */}
+                <div className={`search-hero ${hasSearched ? 'search-hero-compact' : ''}`}>
+                    {!hasSearched && (
+                        <div className="hero-badge">
+                            <span className="eth-dot green" />
+                            <span className="eth-dot yellow" />
+                            <span className="eth-dot red" />
+                            <span>Ethiopia's National Open Access Portal</span>
                         </div>
-                        <div className="stat-item">
-                            <span className="stat-value">{institutions.length}</span>
-                            <span className="stat-label">Institutions</span>
-                        </div>
-                    </div>
-                )}
-            </div>
+                    )}
 
-            {/* Landing Only: Latest Research Section */}
-            {!hasSearched && (
-                <div className="featured-research-area">
-                    <h2 className="section-title">Latest Research Publications</h2>
-                    <div className="featured-grid">
-                        {latestResearch.map(doc => (
-                            <div key={doc.id} className="doc-card-enhanced featured-card">
-                                <Link to={`/document/${doc.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                                    <h3>{doc.title}</h3>
-                                    <p className="abstract-short">{doc.abstract?.substring(0, 150)}...</p>
-                                    <div className="card-footer">
-                                        <span className="inst-badge">{institutions.find(i => i.id === doc.institution_id)?.name || 'JU-CBMP'}</span>
-                                        <span className="view-more">View Full Text →</span>
-                                    </div>
-                                </Link>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="center-actions">
-                        <button className="btn-secondary" onClick={() => setHasSearched(true)}>
-                            <BookOpen size={18} /> Browse All Publications
-                        </button>
-                    </div>
-                </div>
-            )}
+                    <h1 className="hero-title">
+                        {hasSearched
+                            ? 'Search Results'
+                            : 'Discover Ethiopian Health Research'}
+                    </h1>
 
-            {/* Main Content Area - Only if searched or browsing */}
-            {hasSearched && (
-                <div className="search-layout animate-in">
+                    {!hasSearched && (
+                        <p className="hero-subtitle">
+                            Free & Open Access to research from Ethiopia's top universities and institutions.
+                        </p>
+                    )}
 
-                    {/* Sidebar Filters */}
-                    <div className="search-sidebar">
-                        <div className="sidebar-title">
-                            <Filter size={18} />
-                            Filters
-                        </div>
-
-                        <div className="filter-group">
-                            <label className="filter-label">Institution</label>
-                            <select
-                                className="filter-select"
-                                value={selectedInst}
-                                onChange={(e) => setSelectedInst(e.target.value)}
-                            >
-                                <option value="">All Institutions</option>
-                                {institutions.map(inst => (
-                                    <option key={inst.id} value={inst.id}>{inst.name}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div className="filter-group">
-                            <label className="filter-label">Publication Year</label>
-                            <select
-                                className="filter-select"
-                                value={selectedYear}
-                                onChange={(e) => setSelectedYear(e.target.value)}
-                            >
-                                <option value="">All Years</option>
-                                {/* Hardcoded years for demo */}
-                                <option value="2026">2026</option>
-                                <option value="2025">2025</option>
-                                <option value="2024">2024</option>
-                                <option value="2023">2023</option>
-                            </select>
-                        </div>
-
-                        {(query || selectedInst || selectedYear) && (
-                            <button onClick={resetFilters} className="reset-filters">
-                                <RefreshCw size={14} />
-                                Reset Filters
-                            </button>
-                        )}
-                    </div>
-
-                    {/* Results List */}
-                    <div className="results-area">
-                        <div className="results-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div className="results-count">
-                                Found <span>{results.length}</span> Results
-                            </div>
-                            {results.length > 0 && query && (
-                                <button
-                                    onClick={async () => {
-                                        try {
-                                            const { getAuthHeaders } = await import('../utils/auth');
-                                            await axios.post(`${import.meta.env.VITE_API_URL}/saved-searches`, { query }, {
-                                                headers: getAuthHeaders()
-                                            });
-                                            alert('Search query saved! Check your dashboard for alerts.');
-                                        } catch (err) {
-                                            alert('Failed to save search. Make sure you are logged in.');
-                                        }
-                                    }}
-                                    className="btn-secondary-small"
-                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 1rem' }}
-                                >
-                                    <Bell size={14} /> Save Search & Get Alerts
+                    {/* Search Bar */}
+                    <form onSubmit={handleSearch} className="search-form">
+                        <div className="search-input-wrap">
+                            <Search className="search-icon" size={20} />
+                            <input
+                                type="text"
+                                placeholder="Search by title, author, keywords, institution..."
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                className="search-input"
+                            />
+                            {query && (
+                                <button type="button" className="search-clear" onClick={() => setQuery('')}>
+                                    <X size={16} />
                                 </button>
                             )}
                         </div>
+                        <button type="submit" className="search-submit-btn">
+                            <Search size={18} /> Search
+                        </button>
+                        <button
+                            type="button"
+                            className="search-filter-toggle"
+                            onClick={() => setFiltersOpen(!filtersOpen)}
+                        >
+                            <Filter size={16} />
+                            Filters
+                            {filtersOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                    </form>
 
-                        {loading ? (
-                            <div className="loading-state">Searching...</div>
-                        ) : (
-                            <div>
-                                {results.length === 0 ? (
-                                    <div className="empty-state" style={{ border: 'none', background: 'transparent' }}>
-                                        {query || selectedInst || selectedYear ? 'No documents found.' : 'Start searching knowledge.'}
-                                    </div>
-                                ) : (
-                                    results.map((doc) => (
-                                        <div key={doc.id} className="doc-card-enhanced">
-                                            <Link to={`/document/${doc.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                                                <h3>{doc.title}</h3>
-                                                <p className="abstract">{doc.abstract}</p>
+                    {/* Advanced Filters Slide-Down */}
+                    {filtersOpen && (
+                        <div className="advanced-filters animate-slideUp">
+                            <div className="filter-row">
+                                <div className="filter-group">
+                                    <label className="input-label">
+                                        <Building2 size={14} style={{ display: 'inline', marginRight: '4px' }} />
+                                        Institution
+                                    </label>
+                                    <select
+                                        className="input-field"
+                                        value={selectedInst}
+                                        onChange={(e) => setSelectedInst(e.target.value)}
+                                    >
+                                        <option value="">All Institutions</option>
+                                        {institutions.map(inst => (
+                                            <option key={inst.id} value={inst.id}>{inst.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="filter-group">
+                                    <label className="input-label">
+                                        <Calendar size={14} style={{ display: 'inline', marginRight: '4px' }} />
+                                        Publication Year
+                                    </label>
+                                    <select
+                                        className="input-field"
+                                        value={selectedYear}
+                                        onChange={(e) => setSelectedYear(e.target.value)}
+                                    >
+                                        <option value="">All Years</option>
+                                        {[2026, 2025, 2024, 2023, 2022, 2021, 2020].map(y => (
+                                            <option key={y} value={y}>{y}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="filter-actions">
+                                    <button className="btn btn-primary btn-sm" onClick={handleSearch}>Apply Filters</button>
+                                    {(selectedInst || selectedYear) && (
+                                        <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedInst(''); setSelectedYear(''); }}>
+                                            <RefreshCw size={13} /> Clear
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
-                                                <div className="tag-container" style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
-                                                    {doc.upload_date && (
-                                                        <span className="tag tag-year">
-                                                            <Calendar size={12} />
-                                                            {new Date(doc.upload_date).getFullYear()}
-                                                        </span>
-                                                    )}
-                                                    {doc.institution_id && (
-                                                        <span className="tag tag-inst">
-                                                            <Building2 size={12} />
-                                                            {institutions.find(i => i.id === doc.institution_id)?.name || 'Institution'}
-                                                        </span>
-                                                    )}
+                    {/* Trending Tags */}
+                    {!hasSearched && (
+                        <div className="trending-row">
+                            <span className="trending-label">Trending:</span>
+                            {['#AI-Health', '#Malaria', '#PublicHealth', '#SustainableAgri', '#Blockchain'].map(t => (
+                                <button
+                                    key={t}
+                                    className="chip"
+                                    onClick={() => handleTopicClick(t.replace('#', ''))}
+                                >
+                                    {t}
+                                </button>
+                            ))}
+                        </div>
+                    )}
 
-                                                    {/* Author Links */}
-                                                    {doc.authors && doc.authors.map(auth => (
-                                                        <Link
-                                                            key={auth.id}
-                                                            to={`/author/${auth.id}`}
-                                                            className="tag tag-author"
-                                                            onClick={(e) => e.stopPropagation()} // Prevent card click
-                                                            style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                                        >
-                                                            <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>👤 {auth.name}</span>
-                                                        </Link>
-                                                    ))}
-                                                </div>
-                                            </Link>
+                    {/* Hero Stats (landing only) */}
+                    {!hasSearched && (
+                        <div className="hero-stats-row">
+                            <div className="hero-stat">
+                                <span className="hero-stat-value">150+</span>
+                                <span className="hero-stat-label">Research Papers</span>
+                            </div>
+                            <div className="hero-stat-divider" />
+                            <div className="hero-stat">
+                                <span className="hero-stat-value">{institutions.length || '10+'}</span>
+                                <span className="hero-stat-label">Institutions</span>
+                            </div>
+                            <div className="hero-stat-divider" />
+                            <div className="hero-stat">
+                                <span className="hero-stat-value">Free</span>
+                                <span className="hero-stat-label">Open Access</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* ── Landing Mode: Featured Content ── */}
+                {!hasSearched && (
+                    <>
+                        {/* Featured Research */}
+                        <section className="landing-section">
+                            <div className="section-header">
+                                <div>
+                                    <h2 className="section-title">Latest Research Publications</h2>
+                                    <p className="section-subtitle">Recently added open access papers from Ethiopian institutions</p>
+                                </div>
+                                <button className="btn btn-secondary btn-sm" onClick={() => setHasSearched(true)}>
+                                    <BookOpen size={15} /> Browse All
+                                </button>
+                            </div>
+                            <div className="featured-grid">
+                                {latestResearch.length === 0
+                                    ? Array(3).fill(null).map((_, i) => (
+                                        <div key={i} className="featured-card skeleton">
+                                            <div className="skeleton-line wide" />
+                                            <div className="skeleton-line" />
+                                            <div className="skeleton-line short" />
                                         </div>
                                     ))
+                                    : latestResearch.slice(0, 6).map(doc => (
+                                        <Link key={doc.id} to={`/document/${doc.id}`} className="featured-card card">
+                                            <div className="featured-card-top">
+                                                {isNewPaper(doc.upload_date) && (
+                                                    <span className="badge badge-new" style={{ marginBottom: '0.75rem' }}>✦ New</span>
+                                                )}
+                                                <h3 className="featured-card-title">{doc.title}</h3>
+                                                <p className="featured-card-abstract">{doc.abstract?.substring(0, 130)}...</p>
+                                            </div>
+                                            <div className="featured-card-footer">
+                                                <span className="badge badge-primary">
+                                                    <Building2 size={11} />
+                                                    {institutions.find(i => i.id === doc.institution_id)?.name || 'Institution'}
+                                                </span>
+                                                <span className="featured-read-more">
+                                                    View <ArrowRight size={13} />
+                                                </span>
+                                            </div>
+                                        </Link>
+                                    ))}
+                            </div>
+                        </section>
+
+                        {/* Explore by Institution */}
+                        <section className="landing-section">
+                            <h2 className="section-title" style={{ marginBottom: '1.25rem' }}>Explore by Institution</h2>
+                            <div className="institution-scroll">
+                                {institutions.map(inst => (
+                                    <Link key={inst.id} to={`/institution/${inst.id}`} className="inst-scroll-card">
+                                        <div className="inst-scroll-icon">🏛</div>
+                                        <span className="inst-scroll-name">{inst.name}</span>
+                                    </Link>
+                                ))}
+                            </div>
+                        </section>
+
+                        {/* Explore by Topic */}
+                        <section className="landing-section">
+                            <h2 className="section-title" style={{ marginBottom: '1.25rem' }}>Explore by Research Topic</h2>
+                            <div className="topics-grid">
+                                {topics.map(topic => (
+                                    <button key={topic} className="topic-chip chip" onClick={() => handleTopicClick(topic)}>
+                                        {topic}
+                                    </button>
+                                ))}
+                            </div>
+                        </section>
+
+                        {/* Why Open Access */}
+                        <section className="landing-section open-access-banner">
+                            <div className="open-access-icon">📖</div>
+                            <h2>Why Open Access?</h2>
+                            <p>IKMS makes Ethiopian research freely available to everyone — students, policymakers, health workers, and the global community.</p>
+                            <div className="open-access-benefits">
+                                <div className="benefit-item"><span>✅</span> Free to Read</div>
+                                <div className="benefit-item"><span>✅</span> Free to Download</div>
+                                <div className="benefit-item"><span>✅</span> Ethiopian-Owned</div>
+                                <div className="benefit-item"><span>✅</span> CC BY 4.0 License</div>
+                            </div>
+                            <Link to="/register" className="btn btn-primary" style={{ marginTop: '1.5rem' }}>
+                                Share Your Research →
+                            </Link>
+                        </section>
+                    </>
+                )}
+
+                {/* ── Search Results Mode ── */}
+                {hasSearched && (
+                    <div className="search-layout animate-fadeIn">
+                        {/* Results Header */}
+                        <div className="results-header-bar">
+                            <div className="results-count">
+                                {loading ? 'Searching...' : (
+                                    <><strong>{results.length}</strong> result{results.length !== 1 ? 's' : ''} found{query ? ` for "${query}"` : ''}</>
                                 )}
+                            </div>
+                            <div className="results-controls">
+                                <select
+                                    className="input-field"
+                                    style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                                    value={sortBy}
+                                    onChange={(e) => setSortBy(e.target.value)}
+                                >
+                                    <option value="relevance">Sort: Relevance</option>
+                                    <option value="date">Sort: Newest</option>
+                                    <option value="downloads">Sort: Most Downloaded</option>
+                                </select>
+                                {(query || selectedInst || selectedYear) && (
+                                    <button className="btn btn-ghost btn-sm" onClick={resetFilters}>
+                                        <RefreshCw size={13} /> Reset
+                                    </button>
+                                )}
+                                {results.length > 0 && query && (
+                                    <button
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={async () => {
+                                            try {
+                                                const { getAuthHeaders } = await import('../utils/auth');
+                                                await axios.post(`${API}/saved-searches`, { query }, { headers: getAuthHeaders() });
+                                                alert('Search saved! Check your dashboard for alerts.');
+                                            } catch {
+                                                alert('Please login to save searches.');
+                                            }
+                                        }}
+                                    >
+                                        <Bell size={13} /> Save Alert
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Results List */}
+                        {loading ? (
+                            <div className="loading-state">Searching publications</div>
+                        ) : results.length === 0 ? (
+                            <div className="empty-state">
+                                <div className="empty-state-icon">🔍</div>
+                                {query || selectedInst || selectedYear
+                                    ? 'No documents found for your search. Try different keywords.'
+                                    : 'Use the search bar or filters above to find research.'}
+                            </div>
+                        ) : (
+                            <div className="results-list">
+                                {getSortedResults().map((doc) => (
+                                    <div key={doc.id} className="result-card card">
+                                        <div className="result-card-body">
+                                            <Link to={`/document/${doc.id}`} className="result-title">{doc.title}</Link>
+                                            <p className="result-abstract">{doc.abstract?.substring(0, 200)}{doc.abstract?.length > 200 ? '...' : ''}</p>
+
+                                            <div className="result-meta">
+                                                {doc.upload_date && (
+                                                    <span className="meta-item">
+                                                        <Calendar size={13} />
+                                                        {new Date(doc.upload_date).getFullYear()}
+                                                    </span>
+                                                )}
+                                                {doc.institution_id && (
+                                                    <span className="meta-item">
+                                                        <Building2 size={13} />
+                                                        {institutions.find(i => i.id === doc.institution_id)?.name || 'Institution'}
+                                                    </span>
+                                                )}
+                                                {doc.download_count > 0 && (
+                                                    <span className="meta-item">
+                                                        <Download size={13} />
+                                                        {doc.download_count} downloads
+                                                    </span>
+                                                )}
+                                                {doc.authors?.map(auth => (
+                                                    <Link
+                                                        key={auth.id}
+                                                        to={`/author/${auth.id}`}
+                                                        className="chip"
+                                                        style={{ fontSize: '0.75rem', padding: '0.15rem 0.6rem' }}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        👤 {auth.name}
+                                                    </Link>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="result-card-actions">
+                                            <Link to={`/document/${doc.id}`} className="btn btn-success btn-sm">
+                                                <Download size={14} /> Download PDF
+                                            </Link>
+                                            <Link to={`/document/${doc.id}`} className="btn btn-ghost btn-sm">
+                                                View Details
+                                            </Link>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         )}
                     </div>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 }
 
 export default SearchPage;
-

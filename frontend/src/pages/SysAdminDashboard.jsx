@@ -1,27 +1,27 @@
+/**
+ * IKMS – System Admin Dashboard (Redesigned)
+ * Bug Fix: u.username → u.name
+ */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getUser, getAuthHeaders, logout } from '../utils/auth';
-import { Users, Database, Shield, Activity, Search, Edit2, Check, X } from 'lucide-react';
+import { Users, Database, Activity, Shield, Search } from 'lucide-react';
 import './Dashboard.css';
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function SysAdminDashboard() {
     const [stats, setStats] = useState(null);
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [currentUser, setCurrentUser] = useState(null);
     const [message, setMessage] = useState('');
     const navigate = useNavigate();
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
     useEffect(() => {
-        const user = getUser();
-        if (!user || user.role !== 'sys_admin') {
-            navigate('/login');
-            return;
-        }
-        setCurrentUser(user);
+        const u = getUser();
+        if (!u || u.role !== 'sys_admin') { navigate('/login'); return; }
         fetchData();
     }, [navigate]);
 
@@ -29,14 +29,13 @@ function SysAdminDashboard() {
         setLoading(true);
         try {
             const [statsRes, usersRes] = await Promise.all([
-                axios.get(`${apiUrl}/admin/stats`, { headers: getAuthHeaders() }),
-                axios.get(`${apiUrl}/admin/users`, { headers: getAuthHeaders() })
+                axios.get(`${API}/admin/stats`, { headers: getAuthHeaders() }),
+                axios.get(`${API}/admin/users`, { headers: getAuthHeaders() })
             ]);
             setStats(statsRes.data);
             setUsers(usersRes.data);
-        } catch (error) {
-            console.error('Error fetching admin data:', error);
-            setMessage('✗ Failed to load system data');
+        } catch {
+            setMessage('error:Failed to load system data.');
         } finally {
             setLoading(false);
         }
@@ -44,128 +43,147 @@ function SysAdminDashboard() {
 
     const handleRoleUpdate = async (userId, newRole) => {
         try {
-            await axios.put(`${apiUrl}/admin/users/${userId}/role`, { role: newRole }, {
-                headers: getAuthHeaders()
-            });
-            setMessage(`✓ Role updated successfully`);
+            await axios.put(`${API}/admin/users/${userId}/role`, { role: newRole }, { headers: getAuthHeaders() });
+            setMessage('success:Role updated successfully.');
             fetchData();
-            setTimeout(() => setMessage(''), 3000);
-        } catch (error) {
-            setMessage('✗ Failed to update role');
+        } catch {
+            setMessage('error:Failed to update role.');
         }
+        setTimeout(() => setMessage(''), 3000);
     };
 
+    // FIXED: filter on u.name (not u.username which doesn't exist on model)
     const filteredUsers = users.filter(u =>
-        u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.email.toLowerCase().includes(searchTerm.toLowerCase())
+        (u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (u.email || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    if (!currentUser) return null;
+    const msgType = message.startsWith('success:') ? 'success' : 'error';
+    const msgText = message.replace(/^(success|error):/, '');
+
+    const ROLES = ['public', 'researcher', 'moderator', 'inst_admin', 'sys_admin'];
 
     return (
-        <div className="dashboard-container">
-            <div className="dashboard-header">
-                <div>
-                    <h1 style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <Shield className="accent-text" size={32} />
-                        System Administration
-                    </h1>
-                    <p>Global oversight and platform governance</p>
+        <div className="page-wrapper">
+            <div className="container" style={{ paddingTop: '2.5rem', paddingBottom: '4rem' }}>
+                <div className="dash-header">
+                    <div>
+                        <h1 className="dash-title" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <Shield size={28} color="var(--primary)" /> System Administration
+                        </h1>
+                        <p className="dash-subtitle">Platform governance, user management, and system oversight.</p>
+                    </div>
+                    <button onClick={logout} className="btn btn-ghost btn-sm">Logout</button>
                 </div>
-                <button onClick={logout} className="btn-secondary">Logout</button>
-            </div>
 
-            {message && (
-                <div className={`message ${message.startsWith('✓') ? 'success' : 'error'}`} style={{ marginBottom: '1.5rem' }}>
-                    {message}
+                {message && <div className={`message-banner ${msgType}`}>{msgText}</div>}
+
+                {/* Platform Stats */}
+                <div className="dash-stats-grid" style={{ marginBottom: '2rem' }}>
+                    <div className="stat-card" style={{ borderTop: '4px solid var(--primary)' }}>
+                        <Users size={22} color="var(--primary)" style={{ marginBottom: '0.5rem', opacity: 0.6 }} />
+                        <div className="stat-value">{stats?.users || 0}</div>
+                        <div className="stat-label">Total Users</div>
+                    </div>
+                    <div className="stat-card" style={{ borderTop: '4px solid var(--success)' }}>
+                        <Database size={22} color="var(--success)" style={{ marginBottom: '0.5rem', opacity: 0.6 }} />
+                        <div className="stat-value">{stats?.documents?.approved || 0}</div>
+                        <div className="stat-label">Approved Knowledge</div>
+                    </div>
+                    <div className="stat-card" style={{ borderTop: '4px solid var(--warning)' }}>
+                        <Activity size={22} color="var(--warning)" style={{ marginBottom: '0.5rem', opacity: 0.6 }} />
+                        <div className="stat-value">{stats?.documents?.pending || 0}</div>
+                        <div className="stat-label">Pending Review</div>
+                    </div>
+                    <div className="stat-card" style={{ borderTop: '4px solid var(--info)' }}>
+                        <div className="stat-value">{stats?.institutions || 0}</div>
+                        <div className="stat-label">Institutions</div>
+                    </div>
                 </div>
-            )}
 
-            {/* Platform Stats Grid */}
-            <div className="dashboard-grid" style={{ marginBottom: '2rem', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))' }}>
-                <div className="glass-panel" style={{ borderLeft: '4px solid var(--accent-primary)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                            <p style={{ opacity: 0.6, fontSize: '0.8rem', textTransform: 'uppercase' }}>Total Users</p>
-                            <h2 style={{ fontSize: '2rem', margin: '0.5rem 0' }}>{stats?.users || 0}</h2>
+                {/* System Status */}
+                {stats?.system && (
+                    <div className="card" style={{ marginBottom: '1.5rem', padding: '1.25rem' }}>
+                        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem' }}>System Status</h3>
+                        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                            <span>
+                                🔌 Elasticsearch:{' '}
+                                <strong style={{ color: stats.system.elasticsearch === 'connected' ? 'var(--success)' : 'var(--danger)' }}>
+                                    {stats.system.elasticsearch}
+                                </strong>
+                            </span>
+                            <span>
+                                🗄 Database:{' '}
+                                <strong style={{ color: 'var(--success)' }}>{stats.system.database}</strong>
+                            </span>
                         </div>
-                        <Users size={40} opacity={0.2} />
                     </div>
-                </div>
-                <div className="glass-panel" style={{ borderLeft: '4px solid #10b981' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                            <p style={{ opacity: 0.6, fontSize: '0.8rem', textTransform: 'uppercase' }}>Approved Knowledge</p>
-                            <h2 style={{ fontSize: '2rem', margin: '0.5rem 0' }}>{stats?.documents?.approved || 0}</h2>
-                        </div>
-                        <Database size={40} opacity={0.2} />
-                    </div>
-                </div>
-                <div className="glass-panel" style={{ borderLeft: '4px solid #f59e0b' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                            <p style={{ opacity: 0.6, fontSize: '0.8rem', textTransform: 'uppercase' }}>Pending Review</p>
-                            <h2 style={{ fontSize: '2rem', margin: '0.5rem 0' }}>{stats?.documents?.pending || 0}</h2>
-                        </div>
-                        <Activity size={40} opacity={0.2} />
-                    </div>
-                </div>
-            </div>
+                )}
 
-            {/* User Management Section */}
-            <div className="glass-panel">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                    <h2>User Accounts</h2>
-                    <div style={{ position: 'relative', width: '300px' }}>
-                        <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }} />
-                        <input
-                            type="text"
-                            placeholder="Find user..."
-                            className="search-input"
-                            style={{ paddingLeft: '2.5rem', width: '100%' }}
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                {/* User Management */}
+                <div className="card">
+                    <div className="section-header">
+                        <h2 className="section-title">User Accounts</h2>
+                        <div style={{ position: 'relative', width: '260px' }}>
+                            <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                            <input
+                                type="text"
+                                placeholder="Search users..."
+                                className="input-field"
+                                style={{ paddingLeft: '2.5rem' }}
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
                     </div>
-                </div>
 
-                <div className="table-container">
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                            <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                                <th style={{ padding: '1rem' }}>Username</th>
-                                <th style={{ padding: '1rem' }}>Email</th>
-                                <th style={{ padding: '1rem' }}>Current Role</th>
-                                <th style={{ padding: '1rem' }}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredUsers.map(user => (
-                                <tr key={user.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                    <td style={{ padding: '1rem' }}>{user.username}</td>
-                                    <td style={{ padding: '1rem' }}>{user.email}</td>
-                                    <td style={{ padding: '1rem' }}>
-                                        <span className={`status-badge badge-${user.role}`}>
-                                            {user.role}
-                                        </span>
-                                    </td>
-                                    <td style={{ padding: '1rem' }}>
-                                        <select
-                                            value={user.role}
-                                            onChange={(e) => handleRoleUpdate(user.id, e.target.value)}
-                                            style={{ background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', padding: '4px 8px', borderRadius: '4px' }}
-                                        >
-                                            <option value="public">Public</option>
-                                            <option value="researcher">Researcher</option>
-                                            <option value="moderator">Moderator</option>
-                                            <option value="inst_admin">Inst Admin</option>
-                                            <option value="sys_admin">Sys Admin</option>
-                                        </select>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                    {loading ? (
+                        <div className="loading-state">Loading users</div>
+                    ) : (
+                        <div className="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        {/* FIXED: header says "Name" not "Username" */}
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Current Role</th>
+                                        <th>Change Role</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredUsers.map(u => (
+                                        <tr key={u.id} className="user-table-row">
+                                            {/* FIXED: render u.name not u.username */}
+                                            <td style={{ fontWeight: 600 }}>{u.name || '—'}</td>
+                                            <td>{u.email}</td>
+                                            <td>
+                                                <span className={`badge badge-${u.role === 'sys_admin' ? 'primary' : u.role === 'moderator' ? 'new' : 'approved'}`}>
+                                                    {u.role}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <select
+                                                    className="user-role-select"
+                                                    value={u.role}
+                                                    onChange={(e) => handleRoleUpdate(u.id, e.target.value)}
+                                                >
+                                                    {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                                                </select>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {filteredUsers.length === 0 && (
+                                        <tr>
+                                            <td colSpan={4} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                                                No users match your search.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

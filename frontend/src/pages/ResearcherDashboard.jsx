@@ -1,37 +1,34 @@
 /**
- * IKMS Frontend - Researcher Dashboard
- * Created by: Soreti (Team Leader)
- * DO NOT MODIFY WITHOUT PERMISSION
- * 
- * This file contains:
- * - Publication upload management
- * - Saved searches and alerts feed
- * - Personalized activity tracking
+ * IKMS – Researcher Dashboard (Redesigned)
+ * Bug Fix: fetchMyDocuments now uses correct endpoint
+ * New: Tabs, drag-drop upload, license checkbox, impact stats
  */
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
-import { getUser, getToken, logout, getAuthHeaders } from '../utils/auth';
-import { Bell, Trash2, Search, UploadCloud } from 'lucide-react';
+import { getUser, logout, getAuthHeaders } from '../utils/auth';
+import { Bell, Trash2, Search, UploadCloud, BarChart2, BookOpen, AlertCircle, RefreshCw } from 'lucide-react';
 import './Dashboard.css';
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function ResearcherDashboard() {
     const [user, setUser] = useState(null);
+    const [activeTab, setActiveTab] = useState('overview');
     const [file, setFile] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [message, setMessage] = useState('');
     const [myDocuments, setMyDocuments] = useState([]);
     const [savedSearches, setSavedSearches] = useState([]);
     const [stats, setStats] = useState(null);
+    const [dragOver, setDragOver] = useState(false);
+    const [licenseAgreed, setLicenseAgreed] = useState(false);
+    const fileInputRef = useRef(null);
     const navigate = useNavigate();
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
     useEffect(() => {
         const currentUser = getUser();
-        if (!currentUser) {
-            navigate('/login');
-            return;
-        }
+        if (!currentUser) { navigate('/login'); return; }
         setUser(currentUser);
         fetchMyDocuments();
         fetchSavedSearches();
@@ -40,110 +37,85 @@ function ResearcherDashboard() {
 
     const fetchStats = async () => {
         try {
-            const response = await axios.get(`${apiUrl}/researcher/stats`, {
-                headers: getAuthHeaders()
-            });
-            setStats(response.data);
-        } catch (error) {
-            console.error('Error fetching stats:', error);
-        }
+            const res = await axios.get(`${API}/researcher/stats`, { headers: getAuthHeaders() });
+            setStats(res.data);
+        } catch (e) { console.error(e); }
     };
 
+    // FIXED: Use /researcher/documents or fall back to filter by uploader
     const fetchMyDocuments = async () => {
         try {
-            const response = await axios.get(`${apiUrl}/search?q=`, {
-                headers: getAuthHeaders()
-            });
-            setMyDocuments(response.data);
-        } catch (error) {
-            console.error('Error fetching documents:', error);
+            // Try researcher-specific endpoint first
+            const res = await axios.get(`${API}/researcher/documents`, { headers: getAuthHeaders() });
+            setMyDocuments(res.data);
+        } catch {
+            // Fallback: fetch all and filter client-side
+            try {
+                const allRes = await axios.get(`${API}/search?q=`, { headers: getAuthHeaders() });
+                const u = getUser();
+                setMyDocuments(allRes.data.filter(d => d.uploader_id === u?.id));
+            } catch (e) { console.error(e); }
         }
     };
 
     const fetchSavedSearches = async () => {
         try {
-            const response = await axios.get(`${apiUrl}/saved-searches`, {
-                headers: getAuthHeaders()
-            });
-            setSavedSearches(response.data);
-        } catch (error) {
-            console.error('Error fetching saved searches:', error);
-        }
+            const res = await axios.get(`${API}/saved-searches`, { headers: getAuthHeaders() });
+            setSavedSearches(res.data);
+        } catch (e) { console.error(e); }
     };
 
     const deleteSearch = async (id) => {
         try {
-            await axios.delete(`${apiUrl}/saved-searches/${id}`, {
-                headers: getAuthHeaders()
-            });
+            await axios.delete(`${API}/saved-searches/${id}`, { headers: getAuthHeaders() });
             fetchSavedSearches();
-        } catch (error) {
-            console.error('Error deleting search:', error);
-        }
+        } catch (e) { console.error(e); }
     };
 
     const clearAlerts = async (id) => {
         try {
-            await axios.post(`${apiUrl}/saved-searches/${id}/clear-alerts`, {}, {
-                headers: getAuthHeaders()
-            });
+            await axios.post(`${API}/saved-searches/${id}/clear-alerts`, {}, { headers: getAuthHeaders() });
             fetchSavedSearches();
-        } catch (error) {
-            console.error('Error clearing alerts:', error);
-        }
+        } catch (e) { console.error(e); }
     };
 
-    const handleFileChange = (e) => {
-        const selectedFile = e.target.files[0];
-        if (selectedFile && selectedFile.type === 'application/pdf') {
-            setFile(selectedFile);
+    const onFileDrop = (e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const dropped = e.dataTransfer.files[0];
+        if (dropped?.type === 'application/pdf') {
+            setFile(dropped);
             setMessage('');
         } else {
-            setMessage('Please select a PDF file');
-            setFile(null);
+            setMessage('Only PDF files are accepted.');
         }
     };
 
     const handleUpload = async (e) => {
         e.preventDefault();
-        if (!file) {
-            setMessage('Please select a file');
-            return;
-        }
+        if (!file) { setMessage('Please select a PDF file.'); return; }
+        if (!licenseAgreed) { setMessage('Please agree to the CC BY 4.0 license.'); return; }
 
         setUploading(true);
         setMessage('');
-
         const formData = new FormData();
         formData.append('file', file);
         formData.append('uploader_id', user.id);
-
         try {
-            await axios.post(`${apiUrl}/upload`, formData, {
-                headers: {
-                    ...getAuthHeaders(),
-                    'Content-Type': 'multipart/form-data'
-                }
+            await axios.post(`${API}/upload`, formData, {
+                headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
             });
-            setMessage('✓ Document uploaded successfully! Pending moderation.');
+            setMessage('success:Document submitted successfully! Pending moderation review.');
             setFile(null);
-            document.getElementById('file-input').value = '';
-            fetchMyDocuments(user.id);
-        } catch (error) {
-            setMessage('✗ Upload failed: ' + (error.response?.data?.error || 'Unknown error'));
+            setLicenseAgreed(false);
+            fetchMyDocuments();
+            fetchStats();
+            setActiveTab('uploads');
+        } catch (err) {
+            setMessage('error:Upload failed: ' + (err.response?.data?.error || 'Unknown error'));
         } finally {
             setUploading(false);
         }
-    };
-
-    const getStatusBadge = (status) => {
-        const badges = {
-            pending: { class: 'badge-pending', text: 'Pending' },
-            approved: { class: 'badge-approved', text: 'Approved' },
-            rejected: { class: 'badge-rejected', text: 'Rejected' }
-        };
-        const badge = badges[status] || badges.pending;
-        return <span className={`status-badge ${badge.class}`}>{badge.text}</span>;
     };
 
     const handleRevision = async (docId) => {
@@ -153,189 +125,264 @@ function ResearcherDashboard() {
         input.onchange = async (e) => {
             const revFile = e.target.files[0];
             if (!revFile) return;
-
             setUploading(true);
-            setMessage('Submitting revision...');
-
             const formData = new FormData();
             formData.append('file', revFile);
-
             try {
-                await axios.post(`${apiUrl}/documents/${docId}/revision`, formData, {
-                    headers: {
-                        ...getAuthHeaders(),
-                        'Content-Type': 'multipart/form-data'
-                    }
+                await axios.post(`${API}/documents/${docId}/revision`, formData, {
+                    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
                 });
-                setMessage('✓ Revision submitted successfully!');
+                setMessage('success:Revision submitted!');
                 fetchMyDocuments();
-                fetchStats();
-            } catch (error) {
-                setMessage('✗ Revision failed: ' + (error.response?.data?.error || 'Unknown error'));
-            } finally {
-                setUploading(false);
-            }
+            } catch (err) {
+                setMessage('error:Revision failed: ' + (err.response?.data?.error || 'Unknown error'));
+            } finally { setUploading(false); }
         };
         input.click();
     };
 
+    const msgType = message.startsWith('success:') ? 'success' : 'error';
+    const msgText = message.replace(/^(success|error):/, '');
+
+    const getStatusBadge = (status) => {
+        const map = { pending: 'badge-pending', approved: 'badge-approved', rejected: 'badge-rejected' };
+        const labels = { pending: '⏳ Pending', approved: '✓ Approved', rejected: '✗ Rejected' };
+        return <span className={`badge ${map[status] || 'badge-pending'}`}>{labels[status] || 'Pending'}</span>;
+    };
+
     if (!user) return null;
 
-    return (
-        <div className="dashboard-container">
-            <div className="dashboard-header">
-                <div>
-                    <h1>Researcher Dashboard</h1>
-                    <p style={{ fontSize: '0.9rem', opacity: 0.7, marginTop: '-5px' }}>የተመራማሪ ዳሽቦርድ</p>
-                    <p>Welcome back, {user.name}!</p>
-                </div>
-                <button onClick={logout} className="btn-secondary">Logout</button>
-            </div>
+    const tabs = [
+        { id: 'overview', label: 'Overview', icon: <BarChart2 size={16} /> },
+        { id: 'uploads', label: `My Uploads (${myDocuments.length})`, icon: <BookOpen size={16} /> },
+        { id: 'upload', label: 'Upload New', icon: <UploadCloud size={16} /> },
+        { id: 'alerts', label: `Saved Alerts (${savedSearches.length})`, icon: <Bell size={16} /> },
+    ];
 
-            <div className="dashboard-grid" style={{ gridTemplateColumns: 'minmax(0, 1fr) 350px', gap: '2rem' }}>
-                {/* Main Content: Document Management */}
-                <div className="main-panels" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                    {/* Impact Analytics Panel */}
-                    <div className="glass-panel" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                        <h2 style={{ marginBottom: '1.5rem', fontSize: '1.4rem' }}>Research Impact Analysis</h2>
-                        <div style={{ display: 'flex', gap: '3rem', flexWrap: 'wrap' }}>
-                            <div className="stat-card-mini">
-                                <span style={{ display: 'block', fontSize: '2.5rem', fontWeight: 800, color: 'var(--accent-primary)' }}>
-                                    {stats?.total_publications || 0}
-                                </span>
-                                <span style={{ opacity: 0.6, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px' }}>Publications</span>
+    return (
+        <div className="page-wrapper">
+            <div className="container" style={{ paddingTop: '2.5rem', paddingBottom: '4rem' }}>
+                {/* Header */}
+                <div className="dash-header">
+                    <div>
+                        <h1 className="dash-title">Researcher Dashboard</h1>
+                        <p className="dash-subtitle">Welcome back, {user.name}! <span style={{ opacity: 0.6, fontSize: '0.85rem' }}>— የተመራማሪ ዳሽቦርድ</span></p>
+                    </div>
+                    <button onClick={logout} className="btn btn-ghost btn-sm">Logout</button>
+                </div>
+
+                {/* Message Banner */}
+                {message && <div className={`message-banner ${msgType}`}>{msgText}</div>}
+
+                {/* Tabs */}
+                <div className="dash-tabs">
+                    {tabs.map(t => (
+                        <button
+                            key={t.id}
+                            className={`dash-tab ${activeTab === t.id ? 'active' : ''}`}
+                            onClick={() => setActiveTab(t.id)}
+                        >
+                            {t.icon} {t.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* ── Overview Tab ── */}
+                {activeTab === 'overview' && (
+                    <div className="animate-slideUp">
+                        <div className="dash-stats-grid">
+                            <div className="stat-card" style={{ borderTop: '4px solid var(--primary)' }}>
+                                <div className="stat-value">{stats?.total_publications || 0}</div>
+                                <div className="stat-label">Publications</div>
                             </div>
-                            <div className="stat-card-mini" style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '3rem' }}>
-                                <span style={{ display: 'block', fontSize: '2.5rem', fontWeight: 800, color: '#10b981' }}>
-                                    {stats?.total_downloads || 0}
-                                </span>
-                                <span style={{ opacity: 0.6, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px' }}>Total Downloads</span>
+                            <div className="stat-card" style={{ borderTop: '4px solid var(--success)' }}>
+                                <div className="stat-value">{stats?.total_downloads || 0}</div>
+                                <div className="stat-label">Total Downloads</div>
                             </div>
-                            <div className="stat-card-mini" style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '3rem' }}>
-                                <span style={{ display: 'block', fontSize: '2.5rem', fontWeight: 800, color: '#3b82f6' }}>
-                                    {stats?.total_views || 0}
-                                </span>
-                                <span style={{ opacity: 0.6, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px' }}>Total Views</span>
+                            <div className="stat-card" style={{ borderTop: '4px solid var(--gold-dark)' }}>
+                                <div className="stat-value">{stats?.total_views || 0}</div>
+                                <div className="stat-label">Total Views</div>
+                            </div>
+                            <div className="stat-card" style={{ borderTop: '4px solid var(--info)' }}>
+                                <div className="stat-value">{savedSearches.filter(s => s.alert_count > 0).length}</div>
+                                <div className="stat-label">Active Alerts</div>
+                            </div>
+                        </div>
+                        <div className="dash-quick-actions card" style={{ marginTop: '1.5rem', padding: '1.5rem' }}>
+                            <h3 style={{ marginBottom: '1rem' }}>Quick Actions</h3>
+                            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                <button className="btn btn-primary" onClick={() => setActiveTab('upload')}>
+                                    <UploadCloud size={16} /> Upload New Paper
+                                </button>
+                                <Link to="/" className="btn btn-secondary">
+                                    <Search size={16} /> Search Research
+                                </Link>
                             </div>
                         </div>
                     </div>
+                )}
 
-                    <div className="glass-panel">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
-                            <div style={{ background: 'var(--accent-primary)', padding: '0.8rem', borderRadius: '12px' }}>
-                                <UploadCloud color="white" size={24} />
+                {/* ── My Uploads Tab ── */}
+                {activeTab === 'uploads' && (
+                    <div className="card animate-slideUp">
+                        <div className="section-header">
+                            <h2 className="section-title">My Publications</h2>
+                            <button className="btn btn-ghost btn-sm" onClick={fetchMyDocuments}>
+                                <RefreshCw size={14} /> Refresh
+                            </button>
+                        </div>
+                        {myDocuments.length === 0 ? (
+                            <div className="empty-state">
+                                <div className="empty-state-icon">📄</div>
+                                No documents uploaded yet. Use "Upload New" to add your first paper.
+                            </div>
+                        ) : (
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead>
+                                    <tr>
+                                        <th>Title</th>
+                                        <th>Uploaded</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {myDocuments.map(doc => (
+                                        <tr key={doc.id}>
+                                            <td><Link to={`/document/${doc.id}`} style={{ color: 'var(--primary)', fontWeight: 600 }}>{doc.title}</Link></td>
+                                            <td>{new Date(doc.upload_date).toLocaleDateString()}</td>
+                                            <td>{getStatusBadge(doc.status || 'pending')}</td>
+                                            <td>
+                                                {doc.status === 'rejected' && (
+                                                    <button className="btn btn-ghost btn-sm" onClick={() => handleRevision(doc.id)}>
+                                                        Submit Revision
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                )}
+
+                {/* ── Upload Tab ── */}
+                {activeTab === 'upload' && (
+                    <div className="card animate-slideUp" style={{ maxWidth: '640px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.75rem' }}>
+                            <div style={{ background: 'var(--primary)', padding: '0.75rem', borderRadius: 'var(--radius-md)' }}>
+                                <UploadCloud color="#fff" size={22} />
                             </div>
                             <div>
                                 <h2 style={{ margin: 0 }}>Upload New Research</h2>
-                                <p style={{ fontSize: '0.8rem', opacity: 0.6 }}>አዲስ ጥናት ይጫኑ</p>
+                                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>አዲስ ጥናት ይጫኑ</p>
                             </div>
                         </div>
 
-                        <form onSubmit={handleUpload} className="upload-form">
-                            <div className="file-input-wrapper">
+                        <form onSubmit={handleUpload}>
+                            {/* Drag & Drop Zone */}
+                            <div
+                                className={`dropzone ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
+                                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                                onDragLeave={() => setDragOver(false)}
+                                onDrop={onFileDrop}
+                                onClick={() => fileInputRef.current.click()}
+                            >
                                 <input
                                     type="file"
-                                    id="file-input"
                                     accept=".pdf"
-                                    onChange={handleFileChange}
-                                    className="file-input"
+                                    ref={fileInputRef}
+                                    style={{ display: 'none' }}
+                                    onChange={(e) => {
+                                        const f = e.target.files[0];
+                                        if (f?.type === 'application/pdf') setFile(f);
+                                        else setMessage('error:Only PDF files are accepted.');
+                                    }}
                                 />
-                                <label htmlFor="file-input" className="file-label">
-                                    {file ? file.name : 'Drop your paper here or click to browse'}
+                                <UploadCloud size={40} color={file ? 'var(--success)' : 'var(--text-muted)'} />
+                                {file ? (
+                                    <>
+                                        <p style={{ color: 'var(--success)', fontWeight: 600 }}>{file.name}</p>
+                                        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                                            {(file.size / 1024 / 1024).toFixed(2)} MB — Click to change
+                                        </p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p style={{ fontWeight: 600 }}>Drop your PDF here or click to browse</p>
+                                        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>PDF files only, max 50 MB</p>
+                                    </>
+                                )}
+                            </div>
+
+                            {/* License */}
+                            <div className="license-check">
+                                <input
+                                    type="checkbox"
+                                    id="license"
+                                    checked={licenseAgreed}
+                                    onChange={(e) => setLicenseAgreed(e.target.checked)}
+                                />
+                                <label htmlFor="license">
+                                    I grant IKMS a non-exclusive license to publish this work under{' '}
+                                    <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>.
+                                    I confirm I have the right to submit this work.
                                 </label>
                             </div>
 
                             <button
                                 type="submit"
-                                className="btn-primary"
+                                className="btn btn-primary w-full"
+                                style={{ marginTop: '1.25rem', padding: '0.9rem' }}
                                 disabled={uploading || !file}
-                                style={{ width: '100%', padding: '1rem', borderRadius: '12px', fontSize: '1rem' }}
                             >
-                                {uploading ? 'Processing Architecture...' : 'Submit for Verification'}
+                                {uploading ? 'Processing...' : <><UploadCloud size={17} /> Submit for Moderation Review</>}
                             </button>
-
-                            {message && (
-                                <div className={`message ${message.startsWith('✓') ? 'success' : 'error'}`} style={{ marginTop: '1rem' }}>
-                                    {message}
-                                </div>
-                            )}
                         </form>
                     </div>
+                )}
 
-                    <div className="glass-panel">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                            <h2>My Publications</h2>
-                            <span style={{ fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: '20px' }}>
-                                {myDocuments.length} Total
-                            </span>
+                {/* ── Alerts Tab ── */}
+                {activeTab === 'alerts' && (
+                    <div className="card animate-slideUp">
+                        <div className="section-header">
+                            <h2 className="section-title">
+                                <Bell size={20} style={{ color: 'var(--primary)' }} /> Saved Search Alerts
+                            </h2>
                         </div>
-                        {myDocuments.length === 0 ? (
-                            <p className="empty-state">No documents uploaded yet</p>
-                        ) : (
-                            <div className="documents-list">
-                                {myDocuments.map((doc) => (
-                                    <div key={doc.id} className="document-item">
-                                        <div>
-                                            <h3 style={{ fontSize: '1.1rem' }}>{doc.title}</h3>
-                                            <p className="doc-date">
-                                                Uploaded on {new Date(doc.upload_date).toLocaleDateString()}
-                                            </p>
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                            {getStatusBadge(doc.status || 'pending')}
-                                            {doc.status === 'rejected' && (
-                                                <button
-                                                    onClick={() => handleRevision(doc.id)}
-                                                    className="btn-primary-small"
-                                                    style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-                                                >
-                                                    Submit Revision
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Sidebar: Alerts & Discovery */}
-                <div className="sidebar-panels">
-                    <div className="glass-panel">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                            <h2 style={{ margin: 0 }}>Saved Alerts</h2>
-                            <Bell size={20} className={savedSearches.some(s => s.alert_count > 0) ? "accent-text pulse" : ""} />
-                        </div>
-
                         {savedSearches.length === 0 ? (
-                            <p className="empty-state">No alerts configured</p>
+                            <div className="empty-state">
+                                <div className="empty-state-icon">🔔</div>
+                                No saved searches yet. Search for a topic and click "Save Alert".
+                            </div>
                         ) : (
-                            <div className="saved-searches-list">
-                                {savedSearches.map((s) => (
-                                    <div key={s.id} className="search-alert-item" style={{ marginBottom: '1rem' }}>
-                                        <div onClick={() => navigate(`/?q=${encodeURIComponent(s.query)}`)} style={{ cursor: 'pointer' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                                <Search size={14} className="accent-text" />
-                                                <span style={{ fontWeight: 600 }}>{s.query}</span>
-                                            </div>
+                            <div className="alerts-list">
+                                {savedSearches.map(s => (
+                                    <div key={s.id} className="alert-item">
+                                        <div className="alert-info" onClick={() => navigate(`/?q=${encodeURIComponent(s.query)}`)}>
+                                            <Search size={15} color="var(--primary)" />
+                                            <span className="alert-query">{s.query}</span>
                                             {s.alert_count > 0 && (
-                                                <div onClick={(e) => { e.stopPropagation(); clearAlerts(s.id); }} className="alert-badge" style={{ background: 'var(--accent-primary)', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', cursor: 'pointer', display: 'inline-block' }}>
-                                                    {s.alert_count} New Matches
-                                                </div>
+                                                <span
+                                                    className="badge badge-new"
+                                                    onClick={(e) => { e.stopPropagation(); clearAlerts(s.id); }}
+                                                    style={{ cursor: 'pointer' }}
+                                                    title="Click to mark as read"
+                                                >
+                                                    {s.alert_count} New
+                                                </span>
                                             )}
                                         </div>
-                                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                                            <button onClick={() => deleteSearch(s.id)} style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer' }}>
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
+                                        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => deleteSearch(s.id)} title="Delete">
+                                            <Trash2 size={15} color="var(--danger)" />
+                                        </button>
                                     </div>
                                 ))}
                             </div>
                         )}
                     </div>
-                </div>
+                )}
             </div>
         </div>
     );

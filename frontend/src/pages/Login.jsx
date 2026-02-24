@@ -1,101 +1,93 @@
-// Created by: Soreti (Team Leader) - Demo Implementation
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { Mail, Lock, ArrowRight } from 'lucide-react';
 import { setToken, setUser } from '../utils/auth';
 import './Auth.css';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 function Login() {
-    const [formData, setFormData] = useState({
-        email: '',
-        password: ''
-    });
-    const [error, setError] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
     const navigate = useNavigate();
 
-    const handleChange = (e) => {
-        setFormData({
-            ...formData,
-            [e.target.name]: e.target.value
-        });
-    };
-
-    const handleSubmit = async (e) => {
+    const handleLogin = async (e) => {
         e.preventDefault();
-        setError('');
         setLoading(true);
-
+        setError('');
         try {
-            const response = await axios.post('http://localhost:5000/login', formData);
-
-            // Store token and user info
-            setToken(response.data.token);
-            setUser(response.data.user);
-
-            // Redirect based on role
-            const role = response.data.user.role;
-            if (role === 'moderator' || role === 'sys_admin') {
-                navigate('/moderator-dashboard');
-            } else {
-                navigate('/researcher-dashboard');
-            }
+            const res = await axios.post(`${API}/login`, { email, password });
+            setToken(res.data.token);
+            setUser(res.data.user);
+            const role = res.data.user.role;
+            if (role === 'sys_admin') navigate('/sysadmin-dashboard');
+            else if (role === 'moderator') navigate('/moderator-dashboard');
+            else if (role === 'inst_admin') navigate('/institution-dashboard');
+            else navigate('/researcher-dashboard');
         } catch (err) {
-            setError(err.response?.data?.error || 'Login failed. Please try again.');
+            setError(err.response?.data?.error || 'Login failed. Please check your credentials.');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="auth-container">
-            <div className="auth-card">
-                <div className="auth-brand">
-                    <span className="auth-logo">✦ IKMS</span>
-                </div>
+        <div className="auth-page">
+            <div className="auth-card card">
+                <div className="auth-logo">IK<span>MS</span></div>
                 <h1 className="auth-title">Welcome Back</h1>
                 <p className="auth-subtitle">Sign in to your IKMS account</p>
 
-                {error && <div className="error-message">{error}</div>}
+                {error && <div className="message-banner error">{error}</div>}
 
-                <form onSubmit={handleSubmit} className="auth-form">
+                <form onSubmit={handleLogin} className="auth-form">
                     <div className="form-group">
-                        <label htmlFor="email">Email address</label>
+                        <label className="input-label" htmlFor="email">
+                            <Mail size={14} style={{ display: 'inline', marginRight: '4px' }} />
+                            Email Address
+                        </label>
                         <input
-                            type="email"
                             id="email"
-                            name="email"
-                            value={formData.email}
-                            onChange={handleChange}
+                            type="email"
+                            className="input-field"
+                            placeholder="you@university.edu.et"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
                             required
-                            placeholder="researcher@example.com"
+                            autoComplete="email"
                         />
                     </div>
-
                     <div className="form-group">
-                        <label htmlFor="password">Password</label>
+                        <label className="input-label" htmlFor="password">
+                            <Lock size={14} style={{ display: 'inline', marginRight: '4px' }} />
+                            Password
+                        </label>
                         <input
-                            type="password"
                             id="password"
-                            name="password"
-                            value={formData.password}
-                            onChange={handleChange}
-                            required
+                            type="password"
+                            className="input-field"
                             placeholder="••••••••"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            autoComplete="current-password"
                         />
                     </div>
-
-                    <button
-                        type="submit"
-                        className="btn-auth"
-                        disabled={loading}
-                    >
-                        {loading ? 'Signing in...' : 'Sign In →'}
+                    <button type="submit" className="btn btn-primary w-full" style={{ marginTop: '0.5rem' }} disabled={loading}>
+                        {loading ? 'Signing in...' : <><ArrowRight size={17} /> Sign In</>}
                     </button>
                 </form>
 
-                <p className="auth-footer">
-                    Don't have an account? <Link to="/register">Register here</Link>
+                <div className="auth-divider"><span>Don't have an account?</span></div>
+                <Link to="/register" className="btn btn-secondary w-full" style={{ justifyContent: 'center' }}>
+                    Create Account
+                </Link>
+                <p className="auth-note">
+                    By signing in, you agree to the IKMS{' '}
+                    <a href="#terms">Terms of Use</a> and <a href="#open-access">Open Access Policy</a>.
                 </p>
             </div>
         </div>
