@@ -5,9 +5,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { getUser, getAuthHeaders, logout } from '../utils/auth';
+import { getUser, getAuthHeaders, logout } from '../../utils/auth';
 import { Users, Database, Activity, Shield, Search } from 'lucide-react';
-import './Dashboard.css';
+import '../Dashboard.css';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 

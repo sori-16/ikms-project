@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { Shield, CheckCircle, XCircle, FileText, User, Calendar, Building2, Download, BarChart2 } from 'lucide-react';
-import { getUser, getAuthHeaders, logout } from '../utils/auth';
-import './Dashboard.css';
+import { getUser, getAuthHeaders, logout } from '../../utils/auth';
+import '../Dashboard.css';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 

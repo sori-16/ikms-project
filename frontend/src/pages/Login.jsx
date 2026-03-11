@@ -23,9 +23,9 @@ function Login() {
             setToken(res.data.token);
             setUser(res.data.user);
             const role = res.data.user.role;
-            if (role === 'sys_admin') navigate('/sysadmin-dashboard');
-            else if (role === 'moderator') navigate('/moderator-dashboard');
-            else if (role === 'inst_admin') navigate('/institution-dashboard');
+            if (role === 'sys_admin') navigate('/admin/sysadmin');
+            else if (role === 'moderator') navigate('/admin/moderator');
+            else if (role === 'inst_admin') navigate('/admin/institution');
             else navigate('/researcher-dashboard');
         } catch (err) {
             setError(err.response?.data?.error || 'Login failed. Please check your credentials.');

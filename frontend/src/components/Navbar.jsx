@@ -27,8 +27,9 @@ function Navbar() {
 
     const getDashboardLink = () => {
         if (!user) return '/researcher-dashboard';
-        if (user.role === 'moderator' || user.role === 'sys_admin') return '/moderator-dashboard';
-        if (user.role === 'inst_admin') return '/institution-dashboard';
+        if (user.role === 'sys_admin') return '/admin/sysadmin';
+        if (user.role === 'moderator') return '/admin/moderator';
+        if (user.role === 'inst_admin') return '/admin/institution';
         return '/researcher-dashboard';
     };
 

@@ -6,9 +6,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { getUser, logout, getAuthHeaders } from '../utils/auth';
+import { getUser, logout, getAuthHeaders } from '../../utils/auth';
 import { Shield, CheckCircle, XCircle, MessageSquare, Eye, EyeOff } from 'lucide-react';
-import './Dashboard.css';
+import '../Dashboard.css';
 
 // FIXED: Use env var, not hardcoded localhost
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
