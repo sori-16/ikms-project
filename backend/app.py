@@ -863,6 +863,197 @@ def create_app():
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route('/institutions/my/logo', methods=['POST'])
+    @login_required
+    @role_required(UserRole.INST_ADMIN.value)
+    def upload_institution_logo():
+        """Upload / replace the institution's logo to Supabase Storage"""
+        try:
+            if 'logo' not in request.files:
+                return jsonify({"error": "No file provided. Form key must be 'logo'."}), 400
+            logo_file = request.files['logo']
+            if not logo_file or logo_file.filename == '':
+                return jsonify({"error": "Empty file"}), 400
+
+            # Determine institution id
+            user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
+            if not user_res.data or not user_res.data[0].get('institution_id'):
+                return jsonify({"error": "No institution associated"}), 404
+            inst_id = user_res.data[0]['institution_id']
+
+            import io
+            ext = logo_file.filename.rsplit('.', 1)[-1].lower() if '.' in logo_file.filename else 'png'
+            storage_path = f"institutions/{inst_id}/logo.{ext}"
+            file_bytes = logo_file.read()
+
+            # Construct authenticated client to respect RLS
+            from supabase import create_client, ClientOptions
+            token = request.headers.get('Authorization')
+            auth_supabase = create_client(
+                os.environ.get('SUPABASE_URL'), 
+                os.environ.get('SUPABASE_KEY'), 
+                options=ClientOptions(headers={'Authorization': token})
+            ) if token else supabase
+
+            # Upload to Supabase Storage bucket
+            auth_supabase.storage.from_(STORAGE_BUCKET).upload(
+                storage_path, file_bytes,
+                {"content-type": logo_file.content_type, "upsert": "true"}
+            )
+
+            # Get the public URL
+            url_res = auth_supabase.storage.from_(STORAGE_BUCKET).get_public_url(storage_path)
+            logo_url = url_res if isinstance(url_res, str) else url_res.get("publicUrl", "")
+
+            # Persist URL in institutions table
+            supabase.table("institutions").update({"logo_path": logo_url}).eq("id", inst_id).execute()
+
+            return jsonify({"message": "Logo uploaded!", "logo_path": logo_url}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/institutions/my/profile', methods=['GET'])
+
+    @login_required
+    @role_required(UserRole.INST_ADMIN.value)
+    def get_my_institution_profile():
+        """Get the admin's own institution profile from Cloud"""
+        try:
+            user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
+            if not user_res.data or not user_res.data[0].get('institution_id'):
+                return jsonify({"error": "No institution associated"}), 404
+            inst_id = user_res.data[0]['institution_id']
+            inst_res = supabase.table("institutions").select("*").eq("id", inst_id).execute()
+            if not inst_res.data:
+                return jsonify({"error": "Institution not found"}), 404
+            return jsonify(inst_res.data[0]), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/institutions/my/profile', methods=['PUT'])
+    @login_required
+    @role_required(UserRole.INST_ADMIN.value)
+    def update_my_institution_profile():
+        """Update the admin's own institution profile in Cloud"""
+        try:
+            user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
+            if not user_res.data or not user_res.data[0].get('institution_id'):
+                return jsonify({"error": "No institution associated"}), 404
+            inst_id = user_res.data[0]['institution_id']
+            data = request.get_json()
+            update_payload = {}
+            if data.get('description') is not None:
+                update_payload['description'] = data['description']
+            if data.get('location') is not None:
+                update_payload['location'] = data['location']
+            if data.get('website') is not None:
+                update_payload['website'] = data['website']
+            if not update_payload:
+                return jsonify({"error": "No fields to update"}), 400
+            upd_res = supabase.table("institutions").update(update_payload).eq("id", inst_id).execute()
+            return jsonify({"message": "Profile updated successfully", "institution": upd_res.data[0] if upd_res.data else {}}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/institutions/my/documents', methods=['GET'])
+    @login_required
+    @role_required(UserRole.INST_ADMIN.value)
+    def get_my_institution_documents():
+        """Get all documents (approved + pending) for the admin's institution from Cloud"""
+        try:
+            user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
+            if not user_res.data or not user_res.data[0].get('institution_id'):
+                return jsonify({"error": "No institution associated"}), 404
+            inst_id = user_res.data[0]['institution_id']
+            docs_res = supabase.table("documents").select(
+                "id, title, abstract, upload_date, status, uploader_id, download_count"
+            ).eq("institution_id", inst_id).order("upload_date", desc=True).execute()
+            return jsonify(docs_res.data or []), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/institutions/my/members', methods=['GET'])
+    @login_required
+    @role_required(UserRole.INST_ADMIN.value)
+    def get_my_institution_members():
+        """Get all verified researchers under the admin's institution from Cloud"""
+        try:
+            user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
+            if not user_res.data or not user_res.data[0].get('institution_id'):
+                return jsonify({"error": "No institution associated"}), 404
+            inst_id = user_res.data[0]['institution_id']
+            members_res = supabase.table("users").select(
+                "id, name, email, role, created_at"
+            ).eq("institution_id", inst_id).execute()
+            return jsonify(members_res.data or []), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/institutions/my/affiliation-requests', methods=['GET'])
+    @login_required
+    @role_required(UserRole.INST_ADMIN.value)
+    def get_my_affiliation_requests():
+        """Get pending affiliation requests for the admin's institution from Cloud"""
+        try:
+            user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
+            if not user_res.data or not user_res.data[0].get('institution_id'):
+                return jsonify({"error": "No institution associated"}), 404
+            inst_id = user_res.data[0]['institution_id']
+            reqs_res = supabase.table("affiliation_requests").select(
+                "id, user_id, status, created_at"
+            ).eq("institution_id", inst_id).eq("status", "pending").execute()
+            results = []
+            for r in (reqs_res.data or []):
+                u_res = supabase.table("users").select("name, email").eq("id", r['user_id']).execute()
+                u = u_res.data[0] if u_res.data else {}
+                results.append({
+                    "id": r['id'],
+                    "user_id": r['user_id'],
+                    "user_name": u.get('name', 'Unknown'),
+                    "user_email": u.get('email', ''),
+                    "created_at": r['created_at']
+                })
+            return jsonify(results), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/institutions/my/affiliation-requests/<req_id>/approve', methods=['POST'])
+    @login_required
+    @role_required(UserRole.INST_ADMIN.value)
+    def approve_my_affiliation_request(req_id):
+        """Approve an affiliation request, promoting the researcher to verified under this institution"""
+        try:
+            user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
+            if not user_res.data or not user_res.data[0].get('institution_id'):
+                return jsonify({"error": "No institution associated"}), 404
+            inst_id = user_res.data[0]['institution_id']
+            req_res = supabase.table("affiliation_requests").select("*").eq("id", req_id).eq("institution_id", inst_id).execute()
+            if not req_res.data:
+                return jsonify({"error": "Request not found or not for your institution"}), 404
+            req = req_res.data[0]
+            # Approve: mark request approved, set user institution + verified
+            supabase.table("affiliation_requests").update({"status": "approved"}).eq("id", req_id).execute()
+            supabase.table("users").update({
+                "institution_id": inst_id,
+                "is_verified": True,
+                "role": "researcher"
+            }).eq("id", req['user_id']).execute()
+            return jsonify({"message": "Researcher approved and linked to institution"}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/institutions/my/affiliation-requests/<req_id>/reject', methods=['POST'])
+    @login_required
+    @role_required(UserRole.INST_ADMIN.value)
+    def reject_my_affiliation_request(req_id):
+        """Reject an affiliation request"""
+        try:
+            supabase.table("affiliation_requests").update({"status": "rejected"}).eq("id", req_id).execute()
+            return jsonify({"message": "Request rejected"}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
     @app.route('/admin/users', methods=['GET'])
     @role_required(UserRole.SYS_ADMIN.value)
     def admin_get_users():
@@ -1284,6 +1475,8 @@ def create_app():
             "name": institution['name'],
             "description": institution.get('description', ''),
             "location": institution.get('location', ''),
+            "logo_path": institution.get('logo_path', ''),
+            "website": institution.get('website', ''),
             "documents": docs_res.data
         }), 200
 

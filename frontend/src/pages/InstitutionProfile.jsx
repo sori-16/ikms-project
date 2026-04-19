@@ -40,11 +40,17 @@ function InstitutionProfile() {
                 <div className="card" style={{ marginBottom: '2rem', padding: '2.5rem', borderTop: '5px solid var(--primary)' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1.5rem', flexWrap: 'wrap' }}>
                         <div style={{
-                            width: 72, height: 72, borderRadius: 'var(--radius-md)',
-                            background: 'var(--primary)', display: 'flex', alignItems: 'center',
-                            justifyContent: 'center', flexShrink: 0
+                            width: 80, height: 80, borderRadius: 'var(--radius-md)',
+                            background: institution.logo_path ? 'transparent' : 'var(--primary)',
+                            display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', flexShrink: 0,
+                            overflow: 'hidden', border: institution.logo_path ? '2px solid var(--border)' : 'none',
+                            boxShadow: 'var(--shadow-sm)'
                         }}>
-                            <Building2 size={34} color="#fff" />
+                            {institution.logo_path
+                                ? <img src={institution.logo_path} alt={`${institution.name} logo`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : <Building2 size={34} color="#fff" />
+                            }
                         </div>
                         <div style={{ flex: 1 }}>
                             <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(1.4rem, 3vw, 2rem)', fontWeight: 800, marginBottom: '0.5rem' }}>

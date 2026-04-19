@@ -23,9 +23,9 @@ function Login() {
             setToken(res.data.token);
             setUser(res.data.user);
             const role = res.data.user.role;
-            if (role === 'sys_admin') navigate('/admin/sysadmin');
-            else if (role === 'moderator') navigate('/admin/moderator');
-            else if (role === 'inst_admin') navigate('/admin/institution');
+            if (role === 'sys_admin') navigate('/master-admin');
+            else if (role === 'moderator') navigate('/master-admin');
+            else if (role === 'inst_admin') navigate('/institution-admin');
             else if (role === 'researcher' && !res.data.user.is_verified) {
                 // Future enhancement: Guide to a dedicated onboarding page
                 navigate('/researcher-dashboard'); 

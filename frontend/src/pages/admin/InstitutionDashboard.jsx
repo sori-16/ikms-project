@@ -1,373 +1,499 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
-import { Shield, CheckCircle, XCircle, FileText, User, Calendar, Building2, Download, BarChart2, UploadCloud, FolderUp } from 'lucide-react';
-import { getUser, getAuthHeaders, logout } from '../../utils/auth';
-import '../Dashboard.css';
+import {
+    Home, FileText, CheckSquare, Users, Building2, BarChart2, Settings,
+    LogOut, Search, Bell, UploadCloud, ChevronRight, TrendingUp, TrendingDown,
+    MoreVertical, CheckCircle, XCircle, ArrowLeft, Download, Shield, Eye
+} from 'lucide-react';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { getUser, logout, getAuthHeaders } from '../../utils/auth';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+const STATUS_COLORS = {
+    approved: { bg: '#e0f2fe', color: '#0369a1', label: 'Approved' },
+    verified: { bg: '#e0f2fe', color: '#0369a1', label: 'Verified' },
+    pending:  { bg: '#fef3c7', color: '#b45309', label: 'Pending' },
+    rejected: { bg: '#fee2e2', color: '#b91c1c', label: 'Rejected' },
+};
+
+function StatusBadge({ status }) {
+    const s = STATUS_COLORS[status] || STATUS_COLORS.pending;
+    return (
+        <span style={{
+            background: s.bg, color: s.color, padding: '0.2rem 0.6rem',
+            borderRadius: '999px', fontSize: '0.75rem', fontWeight: 600
+        }}>{s.label || status}</span>
+    );
+}
+
 function InstitutionDashboard() {
-    const [pendingDocs, setPendingDocs] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [user, setUser] = useState(null);
-    const [stats, setStats] = useState(null);
-    const [message, setMessage] = useState('');
-    const [activeTab, setActiveTab] = useState('overview');
-    
-    // Bulk Upload State
-    const [bulkFiles, setBulkFiles] = useState([]);
-    const [bulkUploading, setBulkUploading] = useState(false);
-    
+    const [pendingDocs, setPendingDocs]   = useState([]);
+    const [allDocs,     setAllDocs]       = useState([]);
+    const [members,     setMembers]       = useState([]);
+    const [affReqs,     setAffReqs]       = useState([]);
+    const [profile,     setProfile]       = useState(null);
+    const [stats,       setStats]         = useState(null);
+    const [user,        setUser]          = useState(null);
+    const [loading,     setLoading]       = useState(true);
+    const [activeTab,   setActiveTab]     = useState('overview');
+
+    // UI State
+    const [searchQuery, setSearchQuery] = useState('');
+    const [toast, setToast] = useState(null);
+
+    // Profile Edit
+    const [editDesc, setEditDesc] = useState('');
+    const [editLoc, setEditLoc]   = useState('');
+    const [editWeb, setEditWeb]   = useState('');
+    const [logoUploading, setLogoUploading] = useState(false);
+    const [saving, setSaving] = useState(false);
+
     const navigate = useNavigate();
 
     useEffect(() => {
         const u = getUser();
-        if (!u || (u.role !== 'inst_admin' && u.role !== 'sys_admin')) {
-            navigate('/login');
-            return;
+        if (!u || u.role !== 'inst_admin') {
+            navigate('/login'); return;
         }
         setUser(u);
-        fetchStats();
-        fetchPending();
+        loadAll();
     }, [navigate]);
 
-    const fetchStats = async () => {
-        try {
-            const res = await axios.get(`${API}/institutions/my/analytics`, { headers: getAuthHeaders() });
-            setStats(res.data);
-        } catch (e) { console.error(e); }
+    const loadAll = async () => {
+        setLoading(true);
+        await Promise.allSettled([
+            fetchStats(), fetchPending(), fetchAllDocs(),
+            fetchMembers(), fetchAffRequests(), fetchProfile()
+        ]);
+        setLoading(false);
     };
 
-    const fetchPending = async () => {
-        try {
-            const res = await axios.get(`${API}/institutions/my/pending`, { headers: getAuthHeaders() });
-            setPendingDocs(res.data);
-        } catch (e) { console.error(e); }
-        finally { setLoading(false); }
+    const showToast = (msg, type = 'success') => {
+        setToast({ msg, type });
+        setTimeout(() => setToast(null), 3000);
     };
 
-    const handleAction = async (docId, status) => {
+    const fetchStats   = async () => { try { const r = await axios.get(`${API}/institutions/my/analytics`, { headers: getAuthHeaders() }); setStats(r.data); } catch {} };
+    const fetchPending = async () => { try { const r = await axios.get(`${API}/institutions/my/pending`, { headers: getAuthHeaders() }); setPendingDocs(r.data); } catch {} };
+    const fetchAllDocs = async () => { try { const r = await axios.get(`${API}/institutions/my/documents`, { headers: getAuthHeaders() }); setAllDocs(r.data); } catch {} };
+    const fetchMembers = async () => { try { const r = await axios.get(`${API}/institutions/my/members`, { headers: getAuthHeaders() }); setMembers(r.data); } catch {} };
+    const fetchAffRequests = async () => { try { const r = await axios.get(`${API}/institutions/my/affiliation-requests`, { headers: getAuthHeaders() }); setAffReqs(r.data); } catch {} };
+    const fetchProfile = async () => {
+        try {
+            const r = await axios.get(`${API}/institutions/my/profile`, { headers: getAuthHeaders() });
+            setProfile(r.data);
+            setEditDesc(r.data.description || '');
+            setEditLoc(r.data.location || '');
+            setEditWeb(r.data.website || '');
+        } catch {}
+    };
+
+    const handleDocAction = async (docId, status) => {
         try {
             await axios.post(`${API}/documents/${docId}/institutional-verify`, { status }, { headers: getAuthHeaders() });
-            setMessage(`success:Document ${status === 'verified' ? 'verified' : 'rejected'}.`);
-            fetchPending();
-        } catch {
-            setMessage('error:Failed to update status.');
-        }
-        setTimeout(() => setMessage(''), 3000);
+            showToast(`Document ${status === 'verified' ? 'approved' : 'rejected'}.`);
+            fetchPending(); fetchAllDocs(); fetchStats();
+        } catch (err) { showToast(err.response?.data?.error || 'Failed to update document.', 'error'); }
     };
 
-    const msgType = message.startsWith('success:') ? 'success' : 'error';
-    const msgText = message.replace(/^(success|error):/, '');
-
-    if (!user) return null;
-
-    const tabs = [
-        { id: 'overview', label: 'Overview', icon: <BarChart2 size={16} /> },
-        { id: 'pending', label: `Pending (${pendingDocs.length})`, icon: <FileText size={16} /> },
-        { id: 'bulk-upload', label: 'Bulk Upload', icon: <FolderUp size={16} /> }
-    ];
-
-    const handleBulkFileChange = (e) => {
-        if (e.target.files) {
-            setBulkFiles(Array.from(e.target.files));
-        }
-    };
-
-    const handleBulkSubmit = async (e) => {
-        e.preventDefault();
-        if (bulkFiles.length === 0) {
-            setMessage('error:Please select at least one PDF file.');
-            return;
-        }
-
-        setBulkUploading(true);
-        const formData = new FormData();
-        bulkFiles.forEach(file => {
-            formData.append('files', file);
-        });
-
+    const handleAffAction = async (reqId, action) => {
         try {
-            const res = await axios.post(`${API}/admin/institution/bulk-upload`, formData, {
-                headers: {
-                    ...getAuthHeaders(),
-                    'Content-Type': 'multipart/form-data'
-                }
-            });
-            setMessage(`success:${res.data.message}`);
-            setBulkFiles([]);
-            fetchStats(); // Update stats as new documents are added
-        } catch (err) {
-            setMessage(`error:Bulk upload failed: ${err.response?.data?.error || err.message}`);
-        } finally {
-            setBulkUploading(false);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            setTimeout(() => setMessage(''), 5000);
-        }
+            await axios.post(`${API}/institutions/my/affiliation-requests/${reqId}/${action}`, {}, { headers: getAuthHeaders() });
+            showToast(`Request ${action}d successfully.`);
+            fetchAffRequests(); fetchMembers();
+        } catch { showToast('Action failed.', 'error'); }
     };
 
-    return (
-        <div className="page-wrapper" style={{ background: 'var(--bg-body)' }}>
-            <div className="container" style={{ paddingTop: '2.5rem', paddingBottom: '4rem' }}>
-                {/* Premium Dashboard Header */}
-                <div className="dash-header glass-panel" style={{ 
-                    padding: '2rem', 
-                    marginBottom: '2rem', 
-                    borderRadius: 'var(--radius-lg)',
-                    background: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(20,20,40,0.02) 100%)',
-                    borderLeft: '4px solid var(--primary)',
-                    boxShadow: 'var(--shadow-md)'
-                }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                            <h1 className="dash-title" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '2rem', margin: 0 }}>
-                                <Building2 size={32} color="var(--primary)" /> 
-                                {stats?.institution_name ? `${stats.institution_name} Hub` : 'Institution Dashboard'}
-                            </h1>
-                            <p className="dash-subtitle" style={{ fontSize: '1.1rem', marginTop: '0.5rem', color: 'var(--text-secondary)' }}>
-                                Welcome back, {user.name}. Centralized archive management and moderation.
-                            </p>
+    // --- RENDER SIDEBAR ---
+    const SideNav = () => {
+        const tabs = [
+            { id: 'overview', label: 'Overview', icon: Home },
+            { id: 'documents', label: 'Documents', icon: FileText },
+            { id: 'verifications', label: 'Verifications', icon: CheckSquare, badge: pendingDocs.length + affReqs.length },
+            { id: 'researchers', label: 'Researchers', icon: Users },
+            { id: 'profile', label: 'Institution Profile', icon: Building2 },
+            { id: 'analytics', label: 'Analytics', icon: BarChart2 },
+            { id: 'settings', label: 'Settings', icon: Settings },
+        ];
+
+        return (
+            <aside style={{ width: '250px', background: '#0f2b3d', color: '#fff', display: 'flex', flexDirection: 'column', height: '100vh', flexShrink: 0 }}>
+                {/* Logo Area */}
+                <div style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 8, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                        {profile?.logo_path ? <img src={profile.logo_path} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/> : <Building2 size={20} color="#0f2b3d"/>}
+                    </div>
+                    <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem', lineHeight: 1.2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            {profile?.name || 'Institution Admin'}
                         </div>
-                        <button onClick={logout} className="btn btn-ghost">Sign Out</button>
+                        <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: 2 }}>Research Admin</div>
                     </div>
                 </div>
 
-                {message && <div className={`message-banner ${msgType}`} style={{ marginBottom: '2rem', borderRadius: 'var(--radius-md)' }}>{msgText}</div>}
+                {/* Nav Links */}
+                <nav style={{ flex: 1, padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', overflowY: 'auto' }}>
+                    {tabs.map(t => (
+                        <button
+                            key={t.id}
+                            onClick={() => setActiveTab(t.id)}
+                            style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                padding: '0.7rem 1rem', borderRadius: 6, border: 'none', cursor: 'pointer',
+                                background: activeTab === t.id ? 'rgba(255,255,255,0.1)' : 'transparent',
+                                color: activeTab === t.id ? '#fff' : '#94a3b8',
+                                transition: 'all 0.2s', width: '100%', textAlign: 'left',
+                                fontFamily: 'inherit', fontSize: '0.9rem', fontWeight: activeTab === t.id ? 600 : 500
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <t.icon size={18} color={activeTab === t.id ? '#38bdf8' : '#94a3b8'} />
+                                {t.label}
+                            </div>
+                            {t.badge > 0 && (
+                                <span style={{ background: '#22c55e', color: '#fff', fontSize: '0.7rem', fontWeight: 700, padding: '2px 6px', borderRadius: 99 }}>
+                                    {t.badge}
+                                </span>
+                            )}
+                        </button>
+                    ))}
+                </nav>
 
-                {/* Dashboard Grid Layout */}
-                <div className="dash-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 350px', gap: '2rem', alignItems: 'start' }}>
-                    
-                    {/* Main Content Area */}
-                    <div className="dash-main" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                        
-                        {/* Premium Tabs */}
-                        <div className="dash-tabs glass-panel" style={{ padding: '0.5rem', borderRadius: 'var(--radius-full)', display: 'flex', gap: '0.5rem', width: 'fit-content' }}>
-                            {tabs.map(t => (
-                                <button 
-                                    key={t.id} 
-                                    className={`dash-tab ${activeTab === t.id ? 'active' : ''}`} 
-                                    onClick={() => setActiveTab(t.id)}
-                                    style={{
-                                        padding: '0.75rem 1.5rem',
-                                        borderRadius: 'var(--radius-full)',
-                                        border: 'none',
-                                        background: activeTab === t.id ? 'var(--primary)' : 'transparent',
-                                        color: activeTab === t.id ? 'white' : 'var(--text-secondary)',
-                                        fontWeight: activeTab === t.id ? '600' : '500',
-                                        transition: 'all 0.2s',
-                                        display: 'flex', alignItems: 'center', gap: '0.5rem'
-                                    }}
-                                >
-                                    {t.icon} {t.label}
-                                </button>
+                <div style={{ padding: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <Link to="/" style={{ color: '#94a3b8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.9rem', padding: '0.5rem 1rem' }}>
+                        <ArrowLeft size={18} /> Public Portal
+                    </Link>
+                    <button onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 1rem', background: 'none', border: 'none', color: '#ef4444', fontSize: '0.9rem', cursor: 'pointer', textAlign: 'left' }}>
+                        <LogOut size={18} /> Logout
+                    </button>
+                </div>
+            </aside>
+        );
+    };
+
+    // --- RENDER TOP BAR ---
+    const TopBar = () => (
+        <header style={{ background: '#fff', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 2rem', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, maxWidth: 400 }}>
+                <div style={{ position: 'relative', width: '100%' }}>
+                    <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: 12, top: 10 }} />
+                    <input 
+                        type="text" 
+                        placeholder="Search standard global data..." 
+                        style={{ width: '100%', padding: '8px 12px 8px 36px', borderRadius: 99, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '0.85rem', outline: 'none' }}
+                        value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                    />
+                </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                <div style={{ position: 'relative', cursor: 'pointer' }}>
+                    <Bell size={20} color="#64748b" />
+                    {(pendingDocs.length > 0 || affReqs.length > 0) && <span style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, background: '#ef4444', borderRadius: '50%' }} />}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0f172a' }}>{user?.name}</div>
+                        <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Admin</div>
+                    </div>
+                    <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#e0f2fe', color: '#0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem' }}>
+                        {user?.name?.[0]?.toUpperCase()}
+                    </div>
+                </div>
+            </div>
+        </header>
+    );
+
+    // --- CONTENT VIEWS ---
+    const KpiCard = ({ title, value, subtitle, trendUp, icon: Icon, color = '#38bdf8' }) => (
+        <div style={{ background: '#fff', borderRadius: 8, padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <div style={{ width: 56, height: 56, borderRadius: 12, background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Icon size={28} color={color} />
+            </div>
+            <div>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</div>
+                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0f172a', margin: '0.2rem 0' }}>{value}</div>
+                {subtitle && (
+                    <div style={{ fontSize: '0.75rem', fontWeight: 500, color: trendUp ? '#22c55e' : '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {trendUp ? <TrendingUp size={12}/> : <TrendingDown size={12}/>} {subtitle}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+
+    const renderOverview = () => {
+        const approvedCount = allDocs.filter(d => d.status === 'approved').length;
+        
+        // Dummy data for charts
+        const chartData = [
+            { name: 'Jan', pubs: 400, dls: 240 }, { name: 'Feb', pubs: 300, dls: 139 },
+            { name: 'Mar', pubs: 200, dls: 980 }, { name: 'Apr', pubs: 278, dls: 390 },
+            { name: 'May', pubs: 189, dls: 480 }, { name: 'Jun', pubs: 239, dls: 380 }
+        ];
+
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Overview</h2>
+                
+                {/* KPIs */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
+                    <KpiCard title="Total Publications" value={approvedCount} subtitle="▲ 5% this month" trendUp={true} icon={FileText} color="#0284c7" />
+                    <KpiCard title="Pending Verifications" value={pendingDocs.length + affReqs.length} subtitle="Needs attention" trendUp={false} icon={CheckSquare} color="#f59e0b" />
+                    <KpiCard title="Total Downloads" value={stats?.total_downloads || 0} subtitle="▲ 8% this month" trendUp={true} icon={Download} color="#8b5cf6" />
+                    <KpiCard title="Active Researchers" value={members.length} subtitle="▲ +4 today" trendUp={true} icon={Users} color="#10b981" />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem', alignItems: 'start' }}>
+                    {/* Activity Feed */}
+                    <div style={{ background: '#fff', borderRadius: 8, padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', margin: '0 0 1rem' }}>Recent Activity</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            {pendingDocs.slice(0,4).map((doc, i) => (
+                                <div key={i} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+                                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.8rem', fontWeight: 700, color:'var(--text-muted)' }}>
+                                        {doc.title?.charAt(0) || 'D'}
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>New document submitted</div>
+                                        <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{doc.title.substring(0, 40)}...</div>
+                                        <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: 2 }}>{new Date(doc.created_at || Date.now()).toLocaleDateString()}</div>
+                                    </div>
+                                </div>
                             ))}
+                            {pendingDocs.length === 0 && <div style={{ fontSize: '0.85rem', color: '#64748b' }}>No recent activity.</div>}
                         </div>
-
-                        {/* Overview Content */}
-                        {activeTab === 'overview' && (
-                            <div className="animate-slideUp" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
-                                <div className="stat-card glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)' }}>
-                                    <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(37, 99, 235, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}><FileText size={20} /></div>
-                                    <div className="stat-value" style={{ fontSize: '2.5rem', fontWeight: 'bold' }}>{stats?.total_documents || 0}</div>
-                                    <div className="stat-label" style={{ color: 'var(--text-secondary)' }}>Archived Papers</div>
-                                </div>
-                                <div className="stat-card glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)' }}>
-                                    <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}><Download size={20} /></div>
-                                    <div className="stat-value" style={{ fontSize: '2.5rem', fontWeight: 'bold' }}>{stats?.total_downloads || 0}</div>
-                                    <div className="stat-label" style={{ color: 'var(--text-secondary)' }}>Total Downloads</div>
-                                </div>
-                                <div className="stat-card glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)' }}>
-                                    <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.1)', color: 'var(--gold-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}><User size={20} /></div>
-                                    <div className="stat-value" style={{ fontSize: '2.5rem', fontWeight: 'bold' }}>{stats?.active_researchers || 0}</div>
-                                    <div className="stat-label" style={{ color: 'var(--text-secondary)' }}>Active Researchers</div>
-                                </div>
-                                <div className="stat-card glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)' }}>
-                                    <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}><Shield size={20} /></div>
-                                    <div className="stat-value" style={{ fontSize: '2.5rem', fontWeight: 'bold' }}>{pendingDocs.length}</div>
-                                    <div className="stat-label" style={{ color: 'var(--text-secondary)' }}>Pending Verification</div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Pending Queue Content */}
-                        {activeTab === 'pending' && (
-                            <div className="glass-panel animate-slideUp" style={{ padding: '2rem', borderRadius: 'var(--radius-lg)' }}>
-                                <div className="section-header" style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <h2 className="section-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.75rem' }}><Shield size={24} color="var(--primary)" /> Moderation Queue</h2>
-                                    <button className="btn btn-ghost btn-sm" onClick={fetchPending}>Refresh Queue</button>
-                                </div>
-
-                                {loading ? (
-                                    <div className="loading-state" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Scanning verification queue...</div>
-                                ) : pendingDocs.length === 0 ? (
-                                    <div className="empty-state" style={{ padding: '4rem 2rem', textAlign: 'center', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                                        <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}><CheckCircle size={32} /></div>
-                                        <h3 style={{ margin: '0 0 0.5rem' }}>All Clear!</h3>
-                                        <p style={{ color: 'var(--text-secondary)', margin: 0 }}>No documents are pending verification at this time.</p>
-                                    </div>
-                                ) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                        {pendingDocs.map(doc => (
-                                            <div key={doc.id} className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderLeft: '4px solid var(--warning)' }}>
-                                                <div style={{ flex: 1 }}>
-                                                    <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem' }}>{doc.title}</h3>
-                                                    <div style={{ display: 'flex', gap: '1.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                                                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><User size={14} /> Prepared by {doc.uploader_name || 'Researcher'}</span>
-                                                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Calendar size={14} /> {new Date(doc.upload_date).toLocaleDateString()}</span>
-                                                    </div>
-                                                </div>
-                                                <div style={{ display: 'flex', gap: '0.75rem' }}>
-                                                    <button className="btn btn-success" onClick={() => handleAction(doc.id, 'verified')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem' }}>
-                                                        <CheckCircle size={16} /> Approve
-                                                    </button>
-                                                    <button className="btn btn-danger btn-sm" onClick={() => handleAction(doc.id, 'rejected')} style={{ padding: '0.5rem 1rem' }}>
-                                                        Reject
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Bulk Upload Content */}
-                        {activeTab === 'bulk-upload' && (
-                            <div className="glass-panel animate-slideUp" style={{ padding: '2.5rem', borderRadius: 'var(--radius-lg)' }}>
-                                <div className="section-header" style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                    <FolderUp size={28} color="var(--primary)" />
-                                    <h2 className="section-title" style={{ margin: 0 }}>Enterprise Archive Upload</h2>
-                                </div>
-                                <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', lineHeight: 1.6, fontSize: '1.05rem' }}>
-                                    Seamlessly inject large batches of documents into your institutional archive. 
-                                    Files uploaded here automatically bypass the moderation queue and receive immediate indexing into the national discovery engine. 
-                                    <strong> Notice: The exact filename will be permanently used as the document title.</strong>
-                                </p>
-
-                                <form onSubmit={handleBulkSubmit}>
-                                    <div className="form-group" style={{ marginBottom: '2rem' }}>
-                                        <div style={{ 
-                                            border: '2px dashed var(--border)', 
-                                            borderRadius: 'var(--radius-lg)', 
-                                            padding: '4rem 2rem', 
-                                            textAlign: 'center',
-                                            background: 'rgba(255,255,255,0.5)',
-                                            cursor: 'pointer',
-                                            position: 'relative',
-                                            transition: 'all 0.2s',
-                                            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
-                                        }}>
-                                            <input 
-                                                type="file" 
-                                                multiple 
-                                                accept=".pdf" 
-                                                onChange={handleBulkFileChange}
-                                                style={{ 
-                                                    position: 'absolute', 
-                                                    top: 0, left: 0, right: 0, bottom: 0, 
-                                                    opacity: 0, 
-                                                    cursor: 'pointer' 
-                                                }}
-                                                disabled={bulkUploading}
-                                            />
-                                            <UploadCloud size={64} color="var(--primary)" style={{ opacity: 0.8, marginBottom: '1.5rem' }} />
-                                            <h3 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>Drag & Drop Institutional PDFs</h3>
-                                            <p style={{ color: 'var(--text-muted)', fontSize: '1rem', margin: 0 }}>
-                                                {bulkFiles.length > 0 ? (
-                                                    <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>{bulkFiles.length} file(s) staged and ready...</span>
-                                                ) : (
-                                                    "Click to browse your hard drive. Multiple selections supported."
-                                                )}
-                                            </p>
-                                        </div>
-                                        
-                                        {bulkFiles.length > 0 && (
-                                            <div className="glass-panel" style={{ marginTop: '1.5rem', maxHeight: '250px', overflowY: 'auto', padding: '1.5rem', borderRadius: 'var(--radius-sm)' }}>
-                                                <h4 style={{ margin: '0 0 1rem 0', color: 'var(--text-main)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>Staged for Ingestion:</h4>
-                                                <ul style={{ margin: 0, paddingLeft: '1.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                                                    {bulkFiles.map((f, i) => (
-                                                        <li key={i} style={{ marginBottom: '0.5rem' }}>{f.name} <span style={{ opacity: 0.5 }}>— {(f.size / 1024 / 1024).toFixed(2)} MB</span></li>
-                                                    ))}
-                                                </ul>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <button 
-                                        type="submit" 
-                                        className="btn btn-primary" 
-                                        disabled={bulkUploading || bulkFiles.length === 0}
-                                        style={{ width: '100%', padding: '1.25rem', fontSize: '1.1rem', borderRadius: 'var(--radius-md)', fontWeight: 'bold', boxShadow: 'var(--shadow-md)' }}
-                                    >
-                                        {bulkUploading ? (
-                                            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem' }}>
-                                                <span className="spinner" style={{ width: '22px', height: '22px', border: '3px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
-                                                Processing & Indexing {bulkFiles.length} Documents...
-                                                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-                                            </span>
-                                        ) : (
-                                            `Commence Mass Upload: ${bulkFiles.length} Document(s)`
-                                        )}
-                                    </button>
-                                </form>
-                            </div>
-                        )}
                     </div>
 
-                    {/* Right Sidebar - Professional Features */}
-                    <div className="dash-sidebar" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    {/* Quick Actions & Charts */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        <div style={{ display: 'flex', gap: '1rem' }}>
+                            <button onClick={() => setActiveTab('verifications')} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center', fontWeight: 600, border: '1px solid #cbd5e1' }}><CheckCircle size={16}/> Review Pending</button>
+                            <button onClick={() => setActiveTab('documents')} className="btn btn-primary" style={{ flex: 1, justifyContent: 'center', fontWeight: 600, background: '#0f2b3d' }}><UploadCloud size={16}/> Manage Docs</button>
+                        </div>
                         
-                        {/* System Health Card */}
-                        <div className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)' }}>
-                            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <BarChart2 size={18} color="var(--primary)" /> Platform Analytics
-                            </h3>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                <div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', fontSize: '0.85rem' }}>
-                                        <span style={{ color: 'var(--text-secondary)' }}>Storage Quota</span>
-                                        <span style={{ fontWeight: '500' }}>{Math.max(1, Math.round((stats?.total_documents || 0) * 2.5))} / 500 GB</span>
-                                    </div>
-                                    <div style={{ width: '100%', height: '6px', background: 'var(--bg-secondary)', borderRadius: '3px', overflow: 'hidden' }}>
-                                        <div style={{ width: '4%', height: '100%', background: 'var(--success)' }}></div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', fontSize: '0.85rem' }}>
-                                        <span style={{ color: 'var(--text-secondary)' }}>Verification Rate</span>
-                                        <span style={{ fontWeight: '500' }}>98%</span>
-                                    </div>
-                                    <div style={{ width: '100%', height: '6px', background: 'var(--bg-secondary)', borderRadius: '3px', overflow: 'hidden' }}>
-                                        <div style={{ width: '98%', height: '100%', background: 'var(--primary)' }}></div>
-                                    </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                            <div style={{ background: '#fff', borderRadius: 8, padding: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                                <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#64748b', marginBottom: '1rem' }}>Publications Overview</h4>
+                                <div style={{ height: 180 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={chartData}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                                            <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} />
+                                            <YAxis fontSize={11} tickLine={false} axisLine={false} />
+                                            <RechartsTooltip />
+                                            <Line type="monotone" dataKey="pubs" stroke="#0ea5e9" strokeWidth={3} dot={{r:4}} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
                                 </div>
                             </div>
-                        </div>
-
-                        {/* Recent Institutional Activity (Simulated for aesthetics) */}
-                        <div className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)' }}>
-                            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <FileText size={18} color="var(--success)" /> Quick Diagnostics
-                            </h3>
-                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6 }}>
-                                <p style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', margin: '0 0 0.75rem' }}>
-                                    <span style={{ color: 'var(--success)', marginTop: '2px' }}>●</span> 
-                                    Elasticsearch Indexing Engine is online and synchronized.
-                                </p>
-                                <p style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', margin: '0 0 0.75rem' }}>
-                                    <span style={{ color: 'var(--success)', marginTop: '2px' }}>●</span> 
-                                    Supabase Global CDN connected.
-                                </p>
-                                <p style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', margin: 0 }}>
-                                    <span style={{ color: 'var(--gold-dark)', marginTop: '2px' }}>●</span> 
-                                    Moderation queue processing at normal speeds.
-                                </p>
+                            <div style={{ background: '#fff', borderRadius: 8, padding: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                                <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#64748b', marginBottom: '1rem' }}>Downloads Over Time</h4>
+                                <div style={{ height: 180 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={chartData}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                                            <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} />
+                                            <YAxis fontSize={11} tickLine={false} axisLine={false} />
+                                            <RechartsTooltip />
+                                            <Bar dataKey="dls" fill="#38bdf8" radius={[4, 4, 0, 0]} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+        );
+    };
+
+    const renderVerifications = () => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Pending Verifications</h2>
+            <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                        <tr>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Item / Title</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Type</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Date</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Status</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {affReqs.map(req => (
+                            <tr key={'aff-'+req.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.9rem', fontWeight: 600, color: '#0f172a' }}>{req.user_name} <br/><span style={{ fontSize:'0.8rem', fontWeight: 400, color: '#64748b' }}>{req.user_email}</span></td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem' }}><User size={14} style={{ marginRight: 4, verticalAlign: -2 }}/> Joining Request</td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{new Date(req.created_at).toLocaleDateString()}</td>
+                                <td style={{ padding: '1rem 1.5rem' }}><StatusBadge status="pending" /></td>
+                                <td style={{ padding: '1rem 1.5rem', textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                    <button onClick={() => handleAffAction(req.id, 'approve')} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '0.4rem 0.8rem', borderRadius: 4, fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>Verify</button>
+                                    <button onClick={() => handleAffAction(req.id, 'reject')} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '0.4rem 0.8rem', borderRadius: 4, fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>Reject</button>
+                                </td>
+                            </tr>
+                        ))}
+                        {pendingDocs.map(doc => (
+                            <tr key={'doc-'+doc.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', maxWidth: 300, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.title}</td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem' }}><FileText size={14} style={{ marginRight: 4, verticalAlign: -2 }}/> Document</td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{doc.publication_date ? new Date(doc.publication_date).toLocaleDateString() : 'N/A'}</td>
+                                <td style={{ padding: '1rem 1.5rem' }}><StatusBadge status="pending" /></td>
+                                <td style={{ padding: '1rem 1.5rem', textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                    <Link to={`/document/${doc.id}`} target="_blank" style={{ background: '#f1f5f9', color: '#0f172a', textDecoration: 'none', padding: '0.4rem 0.8rem', borderRadius: 4, fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}><Eye size={14}/> View</Link>
+                                    <button onClick={() => handleDocAction(doc.id, 'approved')} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '0.4rem 0.8rem', borderRadius: 4, fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>Verify</button>
+                                    <button onClick={() => handleDocAction(doc.id, 'rejected')} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '0.4rem 0.8rem', borderRadius: 4, fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>Reject</button>
+                                </td>
+                            </tr>
+                        ))}
+                        {(affReqs.length === 0 && pendingDocs.length === 0) && (
+                            <tr><td colSpan="5" style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>No pending verifications. You are all caught up!</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+
+    const handleProfileSave = async (e) => {
+        e.preventDefault();
+        setSaving(true);
+        try {
+            await axios.put(`${API}/institutions/my/profile`, { description: editDesc, location: editLoc, website: editWeb }, { headers: getAuthHeaders() });
+            showToast('Profile updated successfully!');
+            fetchProfile();
+        } catch { showToast('Failed to update profile.', 'error'); }
+        setSaving(false);
+    };
+
+    const handleLogoUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setLogoUploading(true);
+        const fd = new FormData(); fd.append('logo', file);
+        try {
+            const r = await axios.post(`${API}/institutions/my/logo`, fd, { headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }});
+            showToast('Logo uploaded!');
+            setProfile(prev => prev ? { ...prev, logo_path: r.data.logo_path } : prev);
+        } catch (err) { showToast(err.response?.data?.error || 'Logo upload failed', 'error'); }
+        setLogoUploading(false);
+    };
+
+    const renderProfile = () => (
+        <div style={{ maxWidth: 700, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Institution Profile</h2>
+            <div style={{ background: '#fff', borderRadius: 8, padding: '2rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <form onSubmit={handleProfileSave} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    {/* Logo */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid #f1f5f9' }}>
+                        <div style={{ position: 'relative', width: 90, height: 90, borderRadius: 12, overflow: 'hidden', background: '#f8fafc', border: '1px solid #e2e8f0', flexShrink: 0 }}>
+                            {profile?.logo_path ? <img src={profile.logo_path} alt="logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}><Building2 size={32} color="#94a3b8" /></div>}
+                            <label style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', opacity: 0, transition: 'opacity 0.2s', color: 'white' }} 
+                                onMouseEnter={e => e.currentTarget.style.opacity = 1} onMouseLeave={e => e.currentTarget.style.opacity = 0}>
+                                <UploadCloud size={24} />
+                            </label>
+                            <input type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={handleLogoUpload} />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>Institution Logo</div>
+                            <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: 4 }}>{logoUploading ? 'Uploading...' : 'Square recommended. Hover and click to upload.'}</div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: 6 }}>Institution Name</label>
+                        <input type="text" value={profile?.name || ''} disabled style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#f1f5f9', color: '#64748b', cursor: 'not-allowed', outline: 'none' }} />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: 6 }}>Overview Description</label>
+                        <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={4} style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none', resize: 'vertical' }} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: 6 }}>Location / Headquarters</label>
+                            <input type="text" value={editLoc} onChange={e => setEditLoc(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none' }} />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: 6 }}>Website URL</label>
+                            <input type="url" value={editWeb} onChange={e => setEditWeb(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none' }} />
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                        <button type="submit" disabled={saving} style={{ background: '#0ea5e9', color: 'white', padding: '0.6rem 1.5rem', borderRadius: 6, fontWeight: 600, border: 'none', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Save Changes'}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+
+    const renderDocuments = () => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Institution Documents</h2>
+                <button className="btn btn-primary" style={{ background: '#0f2b3d' }}><UploadCloud size={16}/> Bulk Upload</button>
+            </div>
+            <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                        <tr>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Document Title</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Date</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Status</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>Visibility</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {allDocs.map(doc => (
+                            <tr key={doc.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.9rem', fontWeight: 500, color: '#0f172a', maxWidth: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.title}</td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{doc.publication_date ? new Date(doc.publication_date).toLocaleDateString() : 'N/A'}</td>
+                                <td style={{ padding: '1rem 1.5rem' }}><StatusBadge status={doc.status} /></td>
+                                <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
+                                    <Link to={`/document/${doc.id}`} target="_blank" style={{ color: '#0ea5e9', fontSize: '0.85rem', fontWeight: 600, textDecoration: 'none' }}>View Page</Link>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+
+    const renderDefault = () => (
+        <div style={{ padding: '3rem', textAlign: 'center', background: '#fff', borderRadius: 8, color: '#64748b' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.5rem' }}>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Dashboard</h3>
+            <p>This module is currently under development to integrate deeper system analytics.</p>
+        </div>
+    );
+
+    if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#f4f7f6' }}>Loading Institution Admin...</div>;
+
+    return (
+        <div style={{ display: 'flex', height: '100vh', width: '100vw', background: '#f4f7f6', overflow: 'hidden', fontFamily: 'var(--font-body)' }}>
+            <SideNav />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <TopBar />
+                
+                {toast && (
+                    <div style={{ position: 'absolute', top: 80, right: 24, zIndex: 100, background: toast.type === 'error' ? '#fee2e2' : '#e0f2fe', color: toast.type === 'error' ? '#b91c1c' : '#0369a1', padding: '1rem 1.5rem', borderRadius: 8, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', display: 'flex', gap: '0.5rem', alignItems: 'center', fontWeight: 600, fontSize: '0.9rem', animation: 'dropIn 0.3s' }}>
+                        {toast.type === 'error' ? <AlertCircle size={18}/> : <CheckCircle size={18}/>} {toast.msg}
+                    </div>
+                )}
+
+                <main style={{ flex: 1, overflowY: 'auto', padding: '2rem 3rem' }}>
+                    {activeTab === 'overview' && renderOverview()}
+                    {activeTab === 'verifications' && renderVerifications()}
+                    {activeTab === 'profile' && renderProfile()}
+                    {activeTab === 'documents' && renderDocuments()}
+                    {['researchers', 'analytics', 'settings'].includes(activeTab) && renderDefault()}
+                </main>
+            </div>
+            <style dangerouslySetInnerHTML={{__html: `
+                @keyframes dropIn { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+            `}} />
         </div>
     );
 }

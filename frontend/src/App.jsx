@@ -6,7 +6,7 @@ import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 
 // Admin Layout Components
-import AdminLayout from './components/admin/AdminLayout';
+import MasterAdminDashboard from './pages/admin/MasterAdminDashboard';
 
 // Public Pages
 import Login from './pages/Login';
@@ -21,8 +21,6 @@ import MyLibrary from './pages/MyLibrary';
 import AuthorProfile from './pages/AuthorProfile';
 
 // Admin Pages
-import ModeratorDashboard from './pages/admin/ModeratorDashboard';
-import SysAdminDashboard from './pages/admin/SysAdminDashboard';
 import InstitutionDashboard from './pages/admin/InstitutionDashboard';
 
 // Protected Route Wrapper (Generic)
@@ -75,27 +73,19 @@ function App() {
           </ProtectedRoute>
         } />
 
-        {/* ── Admin Routes (Wrapped in AdminLayout) ── */}
-        <Route path="/admin" element={<AdminLayout />}>
-          {/* Default redirect for /admin */}
-          <Route index element={<Navigate to="/admin/moderator" replace />} />
+        {/* ── Standalone Master Admin Layout ── */}
+        <Route path="/master-admin" element={
+          <ProtectedRoute allowedRoles={['sys_admin', 'moderator']}>
+            <MasterAdminDashboard />
+          </ProtectedRoute>
+        } />
 
-          <Route path="moderator" element={
-            <ProtectedRoute allowedRoles={['moderator', 'sys_admin']}>
-              <ModeratorDashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="sysadmin" element={
-            <ProtectedRoute allowedRoles={['sys_admin']}>
-              <SysAdminDashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="institution" element={
-            <ProtectedRoute allowedRoles={['inst_admin', 'sys_admin']}>
-              <InstitutionDashboard />
-            </ProtectedRoute>
-          } />
-        </Route>
+        {/* ── Standalone Institution Admin Layout ── */}
+        <Route path="/institution-admin" element={
+          <ProtectedRoute allowedRoles={['inst_admin', 'sys_admin']}>
+            <InstitutionDashboard />
+          </ProtectedRoute>
+        } />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
