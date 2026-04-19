@@ -8,15 +8,11 @@ import './Auth.css';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function Register() {
-    const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', role: 'researcher', institution_id: '' });
-    const [institutions, setInstitutions] = useState([]);
+    const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', role: 'researcher' });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const navigate = useNavigate();
 
-    useEffect(() => {
-        axios.get(`${API}/institutions`).then(r => setInstitutions(r.data)).catch(() => { });
-    }, []);
 
     const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
@@ -33,8 +29,7 @@ function Register() {
                 name: form.name,
                 email: form.email,
                 password: form.password,
-                role: form.role,
-                institution_id: form.institution_id || null
+                role: form.role
             });
             setToken(res.data.token);
             setUser(res.data.user);
@@ -82,26 +77,6 @@ function Register() {
                                 <Lock size={14} style={{ display: 'inline', marginRight: '4px' }} /> Confirm Password
                             </label>
                             <input id="confirm" name="confirm" type="password" className="input-field" placeholder="Repeat password" value={form.confirm} onChange={handleChange} required />
-                        </div>
-                    </div>
-                    <div className="form-row">
-                        <div className="form-group">
-                            <label className="input-label" htmlFor="role">Account Type</label>
-                            <select id="role" name="role" className="input-field" value={form.role} onChange={handleChange}>
-                                <option value="researcher">Researcher</option>
-                                <option value="inst_admin">Institution Admin</option>
-                            </select>
-                        </div>
-                        <div className="form-group">
-                            <label className="input-label" htmlFor="institution_id">
-                                <Building2 size={14} style={{ display: 'inline', marginRight: '4px' }} /> Institution (Optional)
-                            </label>
-                            <select id="institution_id" name="institution_id" className="input-field" value={form.institution_id} onChange={handleChange}>
-                                <option value="">Select Institution...</option>
-                                {institutions.map(inst => (
-                                    <option key={inst.id} value={inst.id}>{inst.name}</option>
-                                ))}
-                            </select>
                         </div>
                     </div>
 

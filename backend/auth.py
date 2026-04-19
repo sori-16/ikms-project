@@ -1,52 +1,10 @@
-"""
-IKMS Authentication & Authorization
-Created by: Soreti (Team Leader)
-DO NOT MODIFY WITHOUT PERMISSION
-
-This file contains:
-- Password hashing (bcrypt)
-- JWT token generation/verification
-- @login_required decorator
-- @role_required decorator
-"""
-
-import jwt
-import bcrypt
-from datetime import datetime, timedelta
 from functools import wraps
 from flask import request, jsonify
+from supabase_client import supabase
 import os
 
-SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'dev-secret-key-change-in-production')
-
-def hash_password(password):
-    """Hash a password using bcrypt"""
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-def check_password(password, hashed):
-    """Verify a password against its hash"""
-    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
-
-def generate_token(user_id, role):
-    """Generate a JWT token for a user"""
-    payload = {
-        'user_id': user_id,
-        'role': role,
-        'exp': datetime.utcnow() + timedelta(days=7)  # Token expires in 7 days
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
-
-def decode_token(token):
-    """Decode and verify a JWT token"""
-    try:
-        return jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-    except jwt.ExpiredSignatureError:
-        return None
-    except jwt.InvalidTokenError:
-        return None
-
 def login_required(f):
-    """Decorator to require authentication"""
+    """Decorator to require Supabase authentication"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         token = request.headers.get('Authorization')
@@ -56,18 +14,27 @@ def login_required(f):
         if token.startswith('Bearer '):
             token = token[7:]
         
-        payload = decode_token(token)
-        if not payload:
-            return jsonify({"error": "Invalid or expired token"}), 401
-        
-        request.user_id = payload['user_id']
-        request.user_role = payload['role']
-        return f(*args, **kwargs)
+        try:
+            # Verify token with Supabase
+            auth_response = supabase.auth.get_user(token)
+            if not auth_response.user:
+                return jsonify({"error": "Invalid or expired token"}), 401
+            
+            # Store user info in request
+            request.user_id = auth_response.user.id
+            request.user_email = auth_response.user.email
+            
+            # Get role from metadata (set during signup)
+            request.user_role = auth_response.user.user_metadata.get('role', 'researcher')
+            
+            return f(*args, **kwargs)
+        except Exception as e:
+            return jsonify({"error": f"Authentication failed: {str(e)}"}), 401
     
     return decorated_function
 
 def role_required(*allowed_roles):
-    """Decorator to require specific roles"""
+    """Decorator to require specific roles via Supabase Auth"""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -78,16 +45,32 @@ def role_required(*allowed_roles):
             if token.startswith('Bearer '):
                 token = token[7:]
             
-            payload = decode_token(token)
-            if not payload:
-                return jsonify({"error": "Invalid or expired token"}), 401
-            
-            if payload['role'] not in allowed_roles:
-                return jsonify({"error": "Insufficient permissions"}), 403
-            
-            request.user_id = payload['user_id']
-            request.user_role = payload['role']
-            return f(*args, **kwargs)
+            try:
+                auth_response = supabase.auth.get_user(token)
+                if not auth_response.user:
+                    return jsonify({"error": "Invalid or expired token"}), 401
+                
+                # Check JWT metadata first
+                role = auth_response.user.user_metadata.get('role', 'researcher')
+                
+                # Fallback to database if metadata doesn't grant access but they might be promoted in the DB
+                if role not in allowed_roles:
+                    db_user_res = supabase.table("users").select("role").eq("id", auth_response.user.id).execute()
+                    if db_user_res.data and db_user_res.data[0].get('role') in allowed_roles:
+                        role = db_user_res.data[0].get('role')
+                    else:
+                        return jsonify({"error": "Insufficient permissions"}), 403
+                
+                request.user_id = auth_response.user.id
+                request.user_role = role
+                return f(*args, **kwargs)
+            except Exception as e:
+                return jsonify({"error": f"Authorization failed: {str(e)}"}), 401
         
         return decorated_function
     return decorator
+
+# Kept for compatibility if needed for other scripts, but deprecated for Auth
+def hash_password(password): return "DEPRECATED"
+def check_password(password, hashed): return False
+def generate_token(user_id, role): return "DEPRECATED"

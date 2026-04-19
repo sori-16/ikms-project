@@ -26,6 +26,10 @@ function Login() {
             if (role === 'sys_admin') navigate('/admin/sysadmin');
             else if (role === 'moderator') navigate('/admin/moderator');
             else if (role === 'inst_admin') navigate('/admin/institution');
+            else if (role === 'researcher' && !res.data.user.is_verified) {
+                // Future enhancement: Guide to a dedicated onboarding page
+                navigate('/researcher-dashboard'); 
+            }
             else navigate('/researcher-dashboard');
         } catch (err) {
             setError(err.response?.data?.error || 'Login failed. Please check your credentials.');

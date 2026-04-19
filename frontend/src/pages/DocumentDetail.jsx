@@ -5,8 +5,9 @@ import {
     ArrowLeft, Download, Bookmark, BookOpen, Calendar, Building2,
     RefreshCw, ArrowRight, Share2, Mail, ExternalLink, Copy, Check
 } from 'lucide-react';
-import { getAuthHeaders, isAuthenticated } from '../utils/auth';
+import { getAuthHeaders, isAuthenticated, getUser } from '../utils/auth';
 import './DocumentDetail.css';
+import { UserCheck, Heart, Languages, ShieldCheck, Database } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -18,18 +19,25 @@ const DocumentDetail = () => {
     const [message, setMessage] = useState('');
     const [citations, setCitations] = useState(null);
     const [copiedFormat, setCopiedFormat] = useState(null);
+    const [localSummary, setLocalSummary] = useState(null);
+    const [loadingSummary, setLoadingSummary] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
             try {
-                const [docRes, recRes] = await Promise.all([
-                    axios.get(`${API}/documents/${id}`),
-                    axios.get(`${API}/recommend/${id}`)
-                ]);
+                // Fetch document first — independent from recommendations
+                const docRes = await axios.get(`${API}/documents/${id}`);
                 setDoc(docRes.data);
-                setRecommendations(recRes.data);
                 generateCitations(docRes.data);
+
+                // Fetch recommendations separately — failures won't break the page
+                try {
+                    const recRes = await axios.get(`${API}/recommend/${id}`);
+                    setRecommendations(recRes.data);
+                } catch {
+                    setRecommendations([]); // Silently ignore missing recommendations
+                }
             } catch (e) {
                 console.error('Failed to fetch document:', e);
             } finally {
@@ -53,10 +61,37 @@ const DocumentDetail = () => {
         });
     };
 
+    const handleLike = async () => {
+        if (!isAuthenticated()) {
+            showMessage('Please login to endorse research.', 'error');
+            return;
+        }
+        try {
+            const res = await axios.post(`${API}/documents/${id}/like`, {}, { headers: getAuthHeaders() });
+            setDoc({ ...doc, like_count: res.data.count });
+            showMessage(res.data.liked ? 'Research endorsed!' : 'Endorsement removed.', 'success');
+        } catch {
+            showMessage('Failed to process endorsement.', 'error');
+        }
+    };
+
+    const handleSummarize = async () => {
+        setLoadingSummary(true);
+        try {
+            const res = await axios.post(`${API}/documents/${id}/summarize`);
+            setLocalSummary(res.data);
+            showMessage('Summaries generated in Amharic & Afaan Oromoo!', 'success');
+        } catch {
+            showMessage('Failed to generate summaries.', 'error');
+        } finally {
+            setLoadingSummary(false);
+        }
+    };
+
     const handleDownload = async () => {
         try {
             const res = await axios.post(`${API}/documents/${id}/download`, {}, { headers: getAuthHeaders() });
-            window.open(`${API}${res.data.file_url}`, '_blank');
+            window.open(res.data.file_url, '_blank');
             showMessage('Download started!', 'success');
         } catch {
             showMessage('Failed to start download.', 'error');
@@ -73,6 +108,26 @@ const DocumentDetail = () => {
             showMessage('Added to My Library!', 'success');
         } catch {
             showMessage('Failed to bookmark.', 'error');
+        }
+    };
+
+    const handleClaimAuthorship = async () => {
+        if (!isAuthenticated()) {
+            showMessage('Please login to claim authorship.', 'error');
+            return;
+        }
+        try {
+            // Check if there's a primary author to claim or just the doc
+            // For now, let's just claim the profile based on the first author or the doc generally
+            const authorId = doc.authors && doc.authors.length > 0 ? doc.authors[0].id : null;
+            if (!authorId) {
+                showMessage('No author profile found to claim.', 'error');
+                return;
+            }
+            await axios.post(`${API}/authors/${authorId}/claim`, {}, { headers: getAuthHeaders() });
+            showMessage('Claim request submitted for moderation!', 'success');
+        } catch (err) {
+            showMessage(err.response?.data?.error || 'Failed to submit claim.', 'error');
         }
     };
 
@@ -140,6 +195,11 @@ const DocumentDetail = () => {
                                 ✓ Verified Institution
                             </span>
                         )}
+                        {doc.erb_status === 'verified' && (
+                            <span className="badge badge-success" style={{ fontSize: '0.82rem', padding: '0.35rem 1rem', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                <ShieldCheck size={14} /> Ethically Cleared
+                            </span>
+                        )}
                         <span className="badge badge-primary" style={{ fontSize: '0.82rem', padding: '0.35rem 1rem' }}>
                             <Calendar size={13} /> {new Date(doc.upload_date).getFullYear()}
                         </span>
@@ -174,6 +234,10 @@ const DocumentDetail = () => {
                             <span className="doc-metric-label">Downloads</span>
                         </div>
                         <div className="doc-metric">
+                            <span className="doc-metric-value">{doc.like_count || 0}</span>
+                            <span className="doc-metric-label">Endorsements</span>
+                        </div>
+                        <div className="doc-metric">
                             <span className="doc-metric-value">{new Date(doc.upload_date).getFullYear()}</span>
                             <span className="doc-metric-label">Year</span>
                         </div>
@@ -184,9 +248,17 @@ const DocumentDetail = () => {
                         <button onClick={handleDownload} className="btn btn-success btn-lg">
                             <Download size={20} /> Download PDF
                         </button>
+                        <button onClick={handleLike} className="btn btn-lg" style={{ background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c', border: '1px solid rgba(231, 76, 60, 0.2)' }}>
+                            <Heart size={20} fill={doc.user_has_liked ? '#e74c3c' : 'none'} /> Endorse
+                        </button>
                         <button onClick={handleBookmark} className="btn btn-secondary btn-lg">
                             <Bookmark size={20} /> Save Research
                         </button>
+                        {doc.has_dataset && (
+                            <button className="btn btn-primary btn-lg" style={{ background: '#3498db', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Database size={20} /> Download Dataset
+                            </button>
+                        )}
                         <div className="share-dropdown">
                             <span className="btn btn-ghost btn-lg" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'default' }}>
                                 <Share2 size={18} /> Share:
@@ -201,7 +273,38 @@ const DocumentDetail = () => {
                                 <ExternalLink size={16} />
                             </a>
                         </div>
+                        {isAuthenticated() && getUser()?.role === 'researcher' && (
+                            <button onClick={handleClaimAuthorship} className="btn btn-ghost btn-lg" style={{ color: 'var(--primary)', border: '1px solid var(--primary)' }}>
+                                <UserCheck size={20} /> Claim Authorship
+                            </button>
+                        )}
                     </div>
+
+                    <div className="doc-secondary-actions" style={{ marginTop: '20px', padding: '0 2rem' }}>
+                        <button onClick={handleSummarize} className="btn btn-ghost" style={{ color: 'var(--primary)', border: '1px solid rgba(30, 58, 95, 0.2)', padding: '0.5rem 1.5rem' }} disabled={loadingSummary}>
+                            <Languages size={18} /> {loadingSummary ? 'Generating...' : 'Translate Abstract to Local Languages (Amharic/Oromiffa)'}
+                        </button>
+                    </div>
+
+                    {localSummary && (
+                        <div style={{ padding: '0 2rem 2rem 2rem' }}>
+                            <div className="card" style={{ background: 'rgba(241, 196, 15, 0.05)', border: '1px solid rgba(241, 196, 15, 0.2)', padding: '1.5rem' }}>
+                                <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <Languages size={20} className="text-gold" /> የጥናት ማጠቃለያ (AI Summaries)
+                                </h3>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                                    <div>
+                                        <h4 style={{ fontSize: '0.9rem', color: 'var(--primary)', marginBottom: '0.5rem' }}>አማርኛ (Amharic)</h4>
+                                        <p style={{ fontSize: '0.95rem', lineHeight: '1.6', color: 'var(--text-secondary)' }}>{localSummary.amharic}</p>
+                                    </div>
+                                    <div style={{ borderLeft: '1px solid rgba(0,0,0,0.1)', paddingLeft: '2rem' }}>
+                                        <h4 style={{ fontSize: '0.9rem', color: 'var(--primary)', marginBottom: '0.5rem' }}>Afaan Oromoo</h4>
+                                        <p style={{ fontSize: '0.95rem', lineHeight: '1.6', color: 'var(--text-secondary)' }}>{localSummary.oromiffa}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <hr className="divider" />
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
-import { User, Building2, BookOpen, Calendar, Download, Eye, ArrowRight } from 'lucide-react';
+import { User, Building2, BookOpen, Calendar, Download, Eye, ArrowRight, MessageSquare, Briefcase } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -113,6 +113,26 @@ function AuthorProfile() {
                             </div>
                         ))}
                     </div>
+
+                    {/* Collaboration Hub Section */}
+                    {author.user_id && (
+                        <div style={{ borderTop: '1px solid var(--border)', marginTop: '1.5rem', paddingTop: '1.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--gold)', fontWeight: 700, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>
+                                <Briefcase size={16} /> Collaboration Hub
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '2rem' }}>
+                                <div style={{ flex: 1 }}>
+                                    <h3 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>Research Interests & Collaboration</h3>
+                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.6' }}>
+                                        {author.collab_interests || `${author.name} hasn't listed specific collaboration interests yet, but is a verified researcher on the platform.`}
+                                    </p>
+                                </div>
+                                <a href={`mailto:${author.email || 'research@ikms.edu.et'}?subject=Collaboration Request via IKMS`} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0.75rem 1.5rem' }}>
+                                    <MessageSquare size={18} /> Connect for Collaboration
+                                </a>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Publications */}

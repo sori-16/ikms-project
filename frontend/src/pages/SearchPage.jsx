@@ -20,15 +20,17 @@ function SearchPage() {
     const [loading, setLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(!!searchParams.get('q'));
 
-    // Filter state (FIXED: was missing before)
+    // Filter state
     const [selectedInst, setSelectedInst] = useState('');
     const [selectedYear, setSelectedYear] = useState('');
+    const [selectedAuthor, setSelectedAuthor] = useState('');
     const [sortBy, setSortBy] = useState('relevance');
     const [filtersOpen, setFiltersOpen] = useState(false);
 
     // Landing page data
     const [institutions, setInstitutions] = useState([]);
     const [latestResearch, setLatestResearch] = useState([]);
+    const [trendingResearch, setTrendingResearch] = useState([]);
     const [topics] = useState([
         'Malaria', 'Maternal Health', 'HIV/AIDS', 'Tuberculosis',
         'Nutrition', 'Public Health', 'Sustainable Agriculture', 'AI in Healthcare',
@@ -38,16 +40,20 @@ function SearchPage() {
     // Fetch initial data
     useEffect(() => {
         const fetchInitialData = async () => {
-            try {
-                const [instRes, latestRes] = await Promise.all([
-                    axios.get(`${API}/institutions`),
-                    axios.get(`${API}/latest-research`)
-                ]);
-                setInstitutions(instRes.data);
-                setLatestResearch(latestRes.data);
-            } catch (error) {
-                console.error('Failed to fetch initial data:', error);
-            }
+            // Fetch institutions independently
+            axios.get(`${API}/institutions`)
+                .then(res => setInstitutions(res.data))
+                .catch(err => console.error('Institutions fetch failed:', err));
+
+            // Fetch latest research independently
+            axios.get(`${API}/latest-research`)
+                .then(res => setLatestResearch(res.data))
+                .catch(err => console.error('Latest research fetch failed:', err));
+
+            // Fetch trending independently
+            axios.get(`${API}/documents/trending`)
+                .then(res => setTrendingResearch(res.data || []))
+                .catch(err => console.error('Trending fetch failed:', err));
         };
         fetchInitialData();
 
@@ -67,7 +73,8 @@ function SearchPage() {
                 params: {
                     q: searchQuery,
                     institution_id: selectedInst,
-                    year: selectedYear
+                    year: selectedYear,
+                    author: selectedAuthor
                 }
             });
             setResults(response.data);
@@ -83,6 +90,7 @@ function SearchPage() {
         setQuery('');
         setSelectedInst('');
         setSelectedYear('');
+        setSelectedAuthor('');
         setResults([]);
         setHasSearched(false);
         setSortBy('relevance');
@@ -193,25 +201,35 @@ function SearchPage() {
                                         <Calendar size={14} style={{ display: 'inline', marginRight: '4px' }} />
                                         Publication Year
                                     </label>
-                                    <select
+                                    <input
+                                        type="number"
                                         className="input-field"
+                                        placeholder="e.g. 2023"
                                         value={selectedYear}
                                         onChange={(e) => setSelectedYear(e.target.value)}
-                                    >
-                                        <option value="">All Years</option>
-                                        {[2026, 2025, 2024, 2023, 2022, 2021, 2020].map(y => (
-                                            <option key={y} value={y}>{y}</option>
-                                        ))}
-                                    </select>
+                                    />
                                 </div>
-                                <div className="filter-actions">
-                                    <button className="btn btn-primary btn-sm" onClick={handleSearch}>Apply Filters</button>
-                                    {(selectedInst || selectedYear) && (
-                                        <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedInst(''); setSelectedYear(''); }}>
-                                            <RefreshCw size={13} /> Clear
-                                        </button>
-                                    )}
+                                <div className="filter-group">
+                                    <label className="input-label">
+                                        <BookOpen size={14} style={{ display: 'inline', marginRight: '4px' }} />
+                                        Author
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="input-field"
+                                        placeholder="e.g. Abebe"
+                                        value={selectedAuthor}
+                                        onChange={(e) => setSelectedAuthor(e.target.value)}
+                                    />
                                 </div>
+                            </div>
+                            <div className="filter-actions">
+                                <button type="button" className="btn-secondary" onClick={resetFilters}>
+                                    Clear Filters
+                                </button>
+                                <button type="button" className="btn-primary" onClick={handleSearch}>
+                                    Apply Filters
+                                </button>
                             </div>
                         </div>
                     )}
@@ -256,7 +274,49 @@ function SearchPage() {
                 {/* ── Landing Mode: Featured Content ── */}
                 {!hasSearched && (
                     <>
-                        {/* Featured Research */}
+                        {/* Trending Research */}
+                        {trendingResearch.length > 0 && (
+                            <section className="landing-section">
+                                <div className="section-header">
+                                    <div>
+                                        <h2 className="section-title">🔥 Trending Research</h2>
+                                        <p className="section-subtitle">Most downloaded papers this month from Ethiopian research institutions</p>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                                    {trendingResearch.map((doc, index) => (
+                                        <Link key={doc.id} to={`/document/${doc.id}`}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: '1rem',
+                                                padding: '1rem 1.25rem', borderRadius: 'var(--radius)',
+                                                background: 'var(--surface)', border: '1px solid var(--border)',
+                                                textDecoration: 'none', color: 'inherit',
+                                                transition: 'all 0.2s ease'
+                                            }}
+                                            onMouseOver={e => e.currentTarget.style.borderColor = 'var(--primary)'}
+                                            onMouseOut={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                                        >
+                                            <span style={{
+                                                fontWeight: 800, fontSize: '1.4rem', minWidth: '2rem',
+                                                color: index === 0 ? 'var(--warning)' : index === 1 ? 'var(--text-secondary)' : 'var(--text-muted)'
+                                            }}>#{index + 1}</span>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>{doc.title}</div>
+                                                <div style={{ fontSize: '0.83rem', color: 'var(--text-muted)' }}>
+                                                    {doc.institution || 'Ethiopian Institution'}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--success)', fontWeight: 600, fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
+                                                <Download size={15} />
+                                                {doc.download_count || 0} downloads
+                                            </div>
+                                        </Link>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+
+                        {/* Latest Research */}
                         <section className="landing-section">
                             <div className="section-header">
                                 <div>

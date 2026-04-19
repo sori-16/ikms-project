@@ -43,9 +43,20 @@ function Navbar() {
             <nav className="navbar">
                 <div className="navbar-container">
                     {/* Left: Brand */}
-                    <Link to="/" className="navbar-brand">
-                        IK<span>MS</span>
-                    </Link>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                        <Link to="/" className="navbar-brand">
+                            IK<span>MS</span>
+                        </Link>
+                        <div className="badge badge-primary" style={{
+                            fontSize: '0.65rem', padding: '0.2rem 0.5rem',
+                            borderRadius: '4px', letterSpacing: '0.5px',
+                            background: 'rgba(var(--primary-rgb), 0.1)',
+                            color: 'var(--primary)', border: '1px solid rgba(var(--primary-rgb), 0.2)',
+                            fontWeight: 700, textTransform: 'uppercase'
+                        }}>
+                            National Open Access
+                        </div>
+                    </div>
 
                     {/* Center: Search */}
                     <form className="navbar-search" onSubmit={handleNavSearch}>

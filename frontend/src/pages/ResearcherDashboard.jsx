@@ -7,7 +7,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { getUser, logout, getAuthHeaders } from '../utils/auth';
-import { Bell, Trash2, Search, UploadCloud, BarChart2, BookOpen, AlertCircle, RefreshCw } from 'lucide-react';
+import { Bell, Trash2, Search, UploadCloud, BarChart2, BookOpen, AlertCircle, RefreshCw, Briefcase, ShieldCheck, Database, X } from 'lucide-react';
 import './Dashboard.css';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -20,9 +20,19 @@ function ResearcherDashboard() {
     const [message, setMessage] = useState('');
     const [myDocuments, setMyDocuments] = useState([]);
     const [savedSearches, setSavedSearches] = useState([]);
+    const [realTimeAlerts, setRealTimeAlerts] = useState([]);
+    const [doi, setDoi] = useState('');
+    const [doiLoading, setDoiLoading] = useState(false);
     const [stats, setStats] = useState(null);
     const [dragOver, setDragOver] = useState(false);
     const [licenseAgreed, setLicenseAgreed] = useState(false);
+    const [collabInterests, setCollabInterests] = useState('');
+    const [erbFile, setErbFile] = useState(null);
+    const [dataFile, setDataFile] = useState(null);
+    const [showVerificationModal, setShowVerificationModal] = useState(false);
+    const [institutions, setInstitutions] = useState([]);
+    const [selectedInst, setSelectedInst] = useState('');
+    const [verificationLoading, setVerificationLoading] = useState(false);
     const fileInputRef = useRef(null);
     const navigate = useNavigate();
 
@@ -32,8 +42,59 @@ function ResearcherDashboard() {
         setUser(currentUser);
         fetchMyDocuments();
         fetchSavedSearches();
+        fetchRealTimeAlerts();
         fetchStats();
+        fetchCollabInterests();
+        if (!currentUser.is_verified) fetchInstitutions();
     }, [navigate]);
+
+    const fetchInstitutions = async () => {
+        try {
+            const res = await axios.get(`${API}/institutions`);
+            setInstitutions(res.data);
+        } catch (e) { console.error("Could not load institutions", e); }
+    };
+
+    const handleVerificationRequest = async (e) => {
+        e.preventDefault();
+        setVerificationLoading(true);
+        try {
+            // For Independent, we send a special flag or null. Let's assume the backend 
+            // treats a missing/null institution_id as an Independent request. 
+            // Or we just send independent flag if we implement it.
+            // For now, let's just use the existing affiliation request endpoint for institutions
+            if (selectedInst === 'independent') {
+                setMessage('info:Independent Publishing requests are currently being rolled out. Please contact IKMS support to expedite your independent review.');
+                setShowVerificationModal(false);
+            } else if (selectedInst) {
+                await axios.post(`${API}/institution/request-affiliation`, { institution_id: selectedInst }, { headers: getAuthHeaders() });
+                setMessage('success:Affiliation request submitted! Awaiting University Admin approval.');
+                setShowVerificationModal(false);
+            } else {
+                setMessage('error:Please select a publishing option.');
+            }
+        } catch (err) {
+            setMessage('error:Request failed: ' + (err.response?.data?.error || 'Unknown error'));
+        } finally {
+            setVerificationLoading(false);
+        }
+    };
+
+    const fetchCollabInterests = async () => {
+        try {
+            const res = await axios.get(`${API}/authors/me`, { headers: getAuthHeaders() });
+            setCollabInterests(res.data.collab_interests || '');
+        } catch { /* might not have profile yet */ }
+    };
+
+    const handleUpdateCollaboration = async () => {
+        try {
+            await axios.put(`${API}/authors/me/collaboration`, { interests: collabInterests }, { headers: getAuthHeaders() });
+            setMessage('success:Collaboration profile updated!');
+        } catch {
+            setMessage('error:Failed to update collaboration profile.');
+        }
+    };
 
     const fetchStats = async () => {
         try {
@@ -62,6 +123,13 @@ function ResearcherDashboard() {
         try {
             const res = await axios.get(`${API}/saved-searches`, { headers: getAuthHeaders() });
             setSavedSearches(res.data);
+        } catch (e) { console.error(e); }
+    };
+
+    const fetchRealTimeAlerts = async () => {
+        try {
+            const res = await axios.get(`${API}/saved-searches/alerts`, { headers: getAuthHeaders() });
+            setRealTimeAlerts(res.data);
         } catch (e) { console.error(e); }
     };
 
@@ -101,6 +169,15 @@ function ResearcherDashboard() {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('uploader_id', user.id);
+        if (erbFile) formData.append('erb_letter', erbFile);
+        if (dataFile) formData.append('dataset', dataFile);
+
+        // Extract title/abstract/authors if they've been prefilled (assuming common form state if we had it, 
+        // but currently we just use the file for title in backend repo. 
+        // Let's assume we might want to pass these if we had matching form fields.)
+        // For now, the backend uses secure_filename(file.filename) as title.
+        // Let's improve the backend upload to accept custom titles if provided!
+
         try {
             await axios.post(`${API}/upload`, formData, {
                 headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
@@ -118,7 +195,33 @@ function ResearcherDashboard() {
         }
     };
 
+    const handleResubmit = async (docId) => {
+        try {
+            await axios.put(`${API}/documents/${docId}/resubmit`, {}, { headers: getAuthHeaders() });
+            setMessage('success:Document resubmitted for review!');
+            fetchMyDocuments();
+        } catch (err) {
+            setMessage('error:Resubmission failed: ' + (err.response?.data?.error || 'Unknown error'));
+        }
+    };
+
+    const handleDoiLookup = async () => {
+        if (!doi.trim()) return;
+        setDoiLoading(true);
+        try {
+            const res = await axios.get(`${API}/doi-lookup?doi=${encodeURIComponent(doi)}`);
+            const metadata = res.data;
+            setMessage(`success:Metadata found! Title: ${metadata.title.substring(0, 50)}...`);
+            window.lastDoiMetadata = metadata;
+        } catch (err) {
+            setMessage('error:DOI lookup failed: ' + (err.response?.data?.error || 'Unknown error'));
+        } finally {
+            setDoiLoading(false);
+        }
+    };
+
     const handleRevision = async (docId) => {
+        // Existing handleRevision for uploading a new PDF for a document
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.pdf';
@@ -129,10 +232,11 @@ function ResearcherDashboard() {
             const formData = new FormData();
             formData.append('file', revFile);
             try {
+                // Assuming backend /documents/:id/revision is implemented to replace file
                 await axios.post(`${API}/documents/${docId}/revision`, formData, {
                     headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
                 });
-                setMessage('success:Revision submitted!');
+                setMessage('success:Revision file uploaded!');
                 fetchMyDocuments();
             } catch (err) {
                 setMessage('error:Revision failed: ' + (err.response?.data?.error || 'Unknown error'));
@@ -145,34 +249,111 @@ function ResearcherDashboard() {
     const msgText = message.replace(/^(success|error):/, '');
 
     const getStatusBadge = (status) => {
-        const map = { pending: 'badge-pending', approved: 'badge-approved', rejected: 'badge-rejected' };
-        const labels = { pending: '⏳ Pending', approved: '✓ Approved', rejected: '✗ Rejected' };
+        const map = {
+            pending: 'badge-pending',
+            approved: 'badge-approved',
+            rejected: 'badge-rejected',
+            revision_requested: 'badge-pending' // Using pending style (yellow) for revision
+        };
+        const labels = {
+            pending: '⏳ Pending',
+            approved: '✓ Approved',
+            rejected: '✗ Rejected',
+            revision_requested: '🔄 Revision Requested'
+        };
         return <span className={`badge ${map[status] || 'badge-pending'}`}>{labels[status] || 'Pending'}</span>;
     };
 
     if (!user) return null;
 
-    const tabs = [
+    // Dynamic Tabs based on verification status
+    const tabs = user.is_verified ? [
         { id: 'overview', label: 'Overview', icon: <BarChart2 size={16} /> },
         { id: 'uploads', label: `My Uploads (${myDocuments.length})`, icon: <BookOpen size={16} /> },
         { id: 'upload', label: 'Upload New', icon: <UploadCloud size={16} /> },
-        { id: 'alerts', label: `Saved Alerts (${savedSearches.length})`, icon: <Bell size={16} /> },
+        { id: 'networking', label: 'Networking', icon: <Briefcase size={16} /> },
+        { id: 'alerts', label: `Alerts (${realTimeAlerts.length})`, icon: <Bell size={16} /> },
+        { id: 'saved', label: `Saved Searches`, icon: <Search size={16} /> },
+    ] : [
+        { id: 'overview', label: 'Overview', icon: <BarChart2 size={16} /> },
+        { id: 'alerts', label: `Alerts (${realTimeAlerts.length})`, icon: <Bell size={16} /> },
+        { id: 'saved', label: `Saved Searches`, icon: <Search size={16} /> },
     ];
 
     return (
         <div className="page-wrapper">
             <div className="container" style={{ paddingTop: '2.5rem', paddingBottom: '4rem' }}>
                 {/* Header */}
-                <div className="dash-header">
+                <div className="dash-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                     <div>
-                        <h1 className="dash-title">Researcher Dashboard</h1>
-                        <p className="dash-subtitle">Welcome back, {user.name}! <span style={{ opacity: 0.6, fontSize: '0.85rem' }}>— የተመራማሪ ዳሽቦርድ</span></p>
+                        <h1 className="dash-title" style={{ marginBottom: '0.25rem' }}>Researcher Dashboard</h1>
+                        <p className="dash-subtitle" style={{ margin: 0 }}>Welcome back, {user.name}! <span style={{ opacity: 0.6, fontSize: '0.85rem' }}>— የተመራማሪ ዳሽቦርድ</span></p>
                     </div>
-                    <button onClick={logout} className="btn btn-ghost btn-sm">Logout</button>
+                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                        {!user.is_verified && (
+                            <button className="btn btn-primary" onClick={() => setShowVerificationModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <ShieldCheck size={16} /> Request to Publish
+                            </button>
+                        )}
+                        <button onClick={logout} className="btn btn-ghost btn-sm">Logout</button>
+                    </div>
                 </div>
 
+                {/* Verification Modal */}
+                {showVerificationModal && (
+                    <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div className="card" style={{ maxWidth: '500px', width: '90%', padding: '2rem', position: 'relative' }}>
+                            <button onClick={() => setShowVerificationModal(false)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                <X size={20} color="var(--text-muted)" />
+                            </button>
+                            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', marginTop: 0 }}>
+                                <ShieldCheck color="var(--primary)" size={24} /> 
+                                Request Publishing Access
+                            </h2>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+                                To maintain the credibility of the IKMS platform, we require researchers to link their profile to a verified institution or apply as an Independent Researcher.
+                            </p>
+                            
+                            <form onSubmit={handleVerificationRequest}>
+                                <div className="form-group">
+                                    <label className="input-label">Select Your Publishing Affiliation</label>
+                                    <select 
+                                        className="input-field"
+                                        value={selectedInst}
+                                        onChange={(e) => setSelectedInst(e.target.value)}
+                                        required
+                                        style={{ border: '1px solid var(--border)', background: 'var(--bg-card)' }}
+                                    >
+                                        <option value="">-- Choose Affiliation --</option>
+                                        <optgroup label="University / Institutional">
+                                            {institutions.map(inst => (
+                                                <option key={inst.id} value={inst.id}>{inst.name}</option>
+                                            ))}
+                                        </optgroup>
+                                        <optgroup label="Independent">
+                                            <option value="independent">Independent Researcher (Global Review)</option>
+                                        </optgroup>
+                                    </select>
+                                </div>
+                                
+                                <div style={{ background: 'rgba(var(--info-rgb), 0.1)', padding: '1rem', borderRadius: 'var(--radius-sm)', marginBottom: '1.5rem', fontSize: '0.85rem', color: 'var(--text-color)' }}>
+                                    <strong>How it works:</strong>
+                                    <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.25rem' }}>
+                                        <li style={{ marginBottom: '0.25rem' }}><strong>Institutional:</strong> Your request will be sent to your university's dashboard. Once approved, you publish under their banner.</li>
+                                        <li><strong>Independent:</strong> Your research will be reviewed directly by the central IKMS moderation team.</li>
+                                    </ul>
+                                </div>
+                                
+                                <button type="submit" className="btn btn-primary w-full" disabled={verificationLoading}>
+                                    {verificationLoading ? 'Submitting...' : 'Submit Request'}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
                 {/* Message Banner */}
-                {message && <div className={`message-banner ${msgType}`}>{msgText}</div>}
+                {message && <div className={`message-banner ${msgType}`} style={{ marginBottom: '1.5rem' }}>{msgText}</div>}
 
                 {/* Tabs */}
                 <div className="dash-tabs">
@@ -190,35 +371,56 @@ function ResearcherDashboard() {
                 {/* ── Overview Tab ── */}
                 {activeTab === 'overview' && (
                     <div className="animate-slideUp">
-                        <div className="dash-stats-grid">
-                            <div className="stat-card" style={{ borderTop: '4px solid var(--primary)' }}>
-                                <div className="stat-value">{stats?.total_publications || 0}</div>
-                                <div className="stat-label">Publications</div>
+                        {user.is_verified ? (
+                            <>
+                                <div className="dash-stats-grid">
+                                    <div className="stat-card" style={{ borderTop: '4px solid var(--primary)' }}>
+                                        <div className="stat-value">{stats?.total_publications || 0}</div>
+                                        <div className="stat-label">Publications</div>
+                                    </div>
+                                    <div className="stat-card" style={{ borderTop: '4px solid var(--success)' }}>
+                                        <div className="stat-value">{stats?.total_downloads || 0}</div>
+                                        <div className="stat-label">Total Downloads</div>
+                                    </div>
+                                    <div className="stat-card" style={{ borderTop: '4px solid var(--gold-dark)' }}>
+                                        <div className="stat-value">{stats?.total_views || 0}</div>
+                                        <div className="stat-label">Total Views</div>
+                                    </div>
+                                    <div className="stat-card" style={{ borderTop: '4px solid var(--info)' }}>
+                                        <div className="stat-value">{savedSearches.filter(s => s.alert_count > 0).length}</div>
+                                        <div className="stat-label">Active Alerts</div>
+                                    </div>
+                                </div>
+                                <div className="dash-quick-actions card" style={{ marginTop: '1.5rem', padding: '1.5rem' }}>
+                                    <h3 style={{ marginBottom: '1rem' }}>Quick Actions</h3>
+                                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                        <button className="btn btn-primary" onClick={() => setActiveTab('upload')}>
+                                            <UploadCloud size={16} /> Upload New Paper
+                                        </button>
+                                        <Link to="/" className="btn btn-secondary">
+                                            <Search size={16} /> Search Research
+                                        </Link>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            // Clean Overview for Unverified "Readers"
+                            <div className="card" style={{ padding: '4rem 2rem', textAlign: 'center', background: 'rgba(var(--primary-rgb), 0.03)', border: '1px dashed var(--border)' }}>
+                                <ShieldCheck size={56} color="var(--primary)" style={{ opacity: 0.8, marginBottom: '1rem' }} />
+                                <h3 style={{ marginBottom: '0.75rem' }}>Ready to Share Your Research?</h3>
+                                <p style={{ color: 'var(--text-secondary)', maxWidth: '550px', margin: '0 auto 2.5rem auto', lineHeight: 1.6, fontSize: '0.95rem' }}>
+                                    Your account is currently in <strong>Reader Mode</strong>. To maintain the integrity of the Ethiopian Indigenous Knowledge database, we require a brief verification process before publishing.
+                                </p>
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+                                    <button className="btn btn-primary" onClick={() => setShowVerificationModal(true)} style={{ padding: '0.75rem 1.5rem', fontWeight: 600 }}>
+                                        Request Publishing Access
+                                    </button>
+                                    <Link to="/" className="btn btn-secondary" style={{ padding: '0.75rem 1.5rem' }}>
+                                        Explore Repository
+                                    </Link>
+                                </div>
                             </div>
-                            <div className="stat-card" style={{ borderTop: '4px solid var(--success)' }}>
-                                <div className="stat-value">{stats?.total_downloads || 0}</div>
-                                <div className="stat-label">Total Downloads</div>
-                            </div>
-                            <div className="stat-card" style={{ borderTop: '4px solid var(--gold-dark)' }}>
-                                <div className="stat-value">{stats?.total_views || 0}</div>
-                                <div className="stat-label">Total Views</div>
-                            </div>
-                            <div className="stat-card" style={{ borderTop: '4px solid var(--info)' }}>
-                                <div className="stat-value">{savedSearches.filter(s => s.alert_count > 0).length}</div>
-                                <div className="stat-label">Active Alerts</div>
-                            </div>
-                        </div>
-                        <div className="dash-quick-actions card" style={{ marginTop: '1.5rem', padding: '1.5rem' }}>
-                            <h3 style={{ marginBottom: '1rem' }}>Quick Actions</h3>
-                            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                                <button className="btn btn-primary" onClick={() => setActiveTab('upload')}>
-                                    <UploadCloud size={16} /> Upload New Paper
-                                </button>
-                                <Link to="/" className="btn btn-secondary">
-                                    <Search size={16} /> Search Research
-                                </Link>
-                            </div>
-                        </div>
+                        )}
                     </div>
                 )}
 
@@ -249,15 +451,34 @@ function ResearcherDashboard() {
                                 <tbody>
                                     {myDocuments.map(doc => (
                                         <tr key={doc.id}>
-                                            <td><Link to={`/document/${doc.id}`} style={{ color: 'var(--primary)', fontWeight: 600 }}>{doc.title}</Link></td>
+                                            <td>
+                                                <Link to={`/document/${doc.id}`} style={{ color: 'var(--primary)', fontWeight: 600 }}>{doc.title}</Link>
+                                                {doc.moderation_notes && (
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--danger)', marginTop: '0.25rem', background: 'rgba(255,0,0,0.05)', padding: '0.4rem', borderRadius: '4px' }}>
+                                                        <strong>Moderator Note:</strong> {doc.moderation_notes}
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td>{new Date(doc.upload_date).toLocaleDateString()}</td>
                                             <td>{getStatusBadge(doc.status || 'pending')}</td>
                                             <td>
-                                                {doc.status === 'rejected' && (
-                                                    <button className="btn btn-ghost btn-sm" onClick={() => handleRevision(doc.id)}>
-                                                        Submit Revision
-                                                    </button>
-                                                )}
+                                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                    {doc.status === 'revision_requested' && (
+                                                        <>
+                                                            <button className="btn btn-secondary btn-xs" onClick={() => handleRevision(doc.id)} title="Upload revised PDF">
+                                                                Update PDF
+                                                            </button>
+                                                            <button className="btn btn-primary btn-xs" onClick={() => handleResubmit(doc.id)}>
+                                                                Resubmit
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    {doc.status === 'rejected' && (
+                                                        <button className="btn btn-ghost btn-xs" onClick={() => handleRevision(doc.id)}>
+                                                            Submit New Version
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -278,6 +499,33 @@ function ResearcherDashboard() {
                                 <h2 style={{ margin: 0 }}>Upload New Research</h2>
                                 <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>አዲስ ጥናት ይጫኑ</p>
                             </div>
+                        </div>
+
+                        <div className="card" style={{ marginBottom: '1.5rem', border: '1px solid var(--primary-light)', background: 'rgba(var(--primary-rgb), 0.02)' }}>
+                            <h4 style={{ margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.9rem' }}>
+                                <RefreshCw size={14} color="var(--primary)" /> Smart Import by DOI
+                            </h4>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    style={{ margin: 0 }}
+                                    placeholder="Paste DOI (e.g. 10.1016/j.jhep.2020.01.001)"
+                                    value={doi}
+                                    onChange={(e) => setDoi(e.target.value)}
+                                />
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={handleDoiLookup}
+                                    disabled={doiLoading}
+                                >
+                                    {doiLoading ? '...' : 'Lookup'}
+                                </button>
+                            </div>
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                                This will automatically pull title, authors, and abstract from CrossRef.
+                            </p>
                         </div>
 
                         <form onSubmit={handleUpload}>
@@ -316,6 +564,24 @@ function ResearcherDashboard() {
                                 )}
                             </div>
 
+                            {/* Supplementary Uploads */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+                                <div className="card" style={{ padding: '1rem', borderStyle: 'dashed' }}>
+                                    <h5 style={{ fontSize: '0.85rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                        <ShieldCheck size={14} color="var(--success)" /> ERB Approval Letter
+                                    </h5>
+                                    <input type="file" accept=".pdf,.jpg,.png" onChange={e => setErbFile(e.target.files[0])} style={{ fontSize: '0.75rem' }} />
+                                    {erbFile && <p style={{ fontSize: '0.7rem', color: 'var(--success)', marginTop: '5px' }}>Attached: {erbFile.name}</p>}
+                                </div>
+                                <div className="card" style={{ padding: '1rem', borderStyle: 'dashed' }}>
+                                    <h5 style={{ fontSize: '0.85rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                        <Database size={14} color="var(--primary)" /> Supplemental Dataset
+                                    </h5>
+                                    <input type="file" accept=".csv,.xlsx,.zip" onChange={e => setDataFile(e.target.files[0])} style={{ fontSize: '0.75rem' }} />
+                                    {dataFile && <p style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '5px' }}>Attached: {dataFile.name}</p>}
+                                </div>
+                            </div>
+
                             {/* License */}
                             <div className="license-check">
                                 <input
@@ -343,17 +609,102 @@ function ResearcherDashboard() {
                     </div>
                 )}
 
+                {/* ── Networking Tab ── */}
+                {activeTab === 'networking' && (
+                    <div className="animate-slideUp">
+                        <div className="card" style={{ padding: '2rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                                <div style={{ background: 'var(--gold)', padding: '0.75rem', borderRadius: 'var(--radius-md)' }}>
+                                    <Briefcase color="#fff" size={22} />
+                                </div>
+                                <div>
+                                    <h2 style={{ margin: 0 }}>Collaboration Profile</h2>
+                                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>ተባባሪ ተመራማሪዎችን ያግኙ</p>
+                                </div>
+                            </div>
+
+                            <div className="doc-section">
+                                <label style={{ fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Research Interests & Collaboration Needs</label>
+                                <textarea
+                                    className="input-field"
+                                    rows="5"
+                                    placeholder="E.g., I am looking for a co-author with expertise in Bio-statistics for a study in Jimma. I specialize in Malaria immunology."
+                                    value={collabInterests}
+                                    onChange={(e) => setCollabInterests(e.target.value)}
+                                    style={{ border: '1px solid var(--border)' }}
+                                />
+                                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                                    This will be visible on your public author profile to help other researchers connect with you.
+                                </p>
+                                <button onClick={handleUpdateCollaboration} className="btn btn-primary" style={{ padding: '0.75rem 2rem' }}>
+                                    Save Collaboration Profile
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="card" style={{ marginTop: '1.5rem', background: 'rgba(var(--primary-rgb), 0.05)' }}>
+                            <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem' }}>
+                                <RefreshCw size={18} color="var(--primary)" /> Networking Opportunities
+                            </h4>
+                            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                                Coming soon: An AI-matched list of researchers with complementary interests will appear here.
+                            </p>
+                        </div>
+                    </div>
+                )}
+
                 {/* ── Alerts Tab ── */}
                 {activeTab === 'alerts' && (
                     <div className="card animate-slideUp">
                         <div className="section-header">
                             <h2 className="section-title">
-                                <Bell size={20} style={{ color: 'var(--primary)' }} /> Saved Search Alerts
+                                <Bell size={20} style={{ color: 'var(--primary)' }} /> Recent Activity Alerts
+                            </h2>
+                            <button className="btn btn-ghost btn-sm" onClick={fetchRealTimeAlerts}>
+                                <RefreshCw size={14} /> Refresh
+                            </button>
+                        </div>
+                        {realTimeAlerts.length === 0 ? (
+                            <div className="empty-state">
+                                <div className="empty-state-icon">🔔</div>
+                                No new matching documents for your saved searches in the last 30 days.
+                            </div>
+                        ) : (
+                            <div className="alerts-list">
+                                {realTimeAlerts.map((alert, idx) => (
+                                    <div key={idx} className="alert-item" style={{ flexDirection: 'column', alignItems: 'flex-start', padding: '1.25rem' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '0.5rem' }}>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                                Match for: <strong>"{alert.search_name}"</strong>
+                                            </span>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                                {new Date(alert.upload_date).toLocaleDateString()}
+                                            </span>
+                                        </div>
+                                        <Link to={`/document/${alert.doc_id}`} style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--primary)', textDecoration: 'none' }}>
+                                            {alert.title}
+                                        </Link>
+                                        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                                            {alert.institution}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* ── Saved Searches Tab ── */}
+                {activeTab === 'saved' && (
+                    <div className="card animate-slideUp">
+                        <div className="section-header">
+                            <h2 className="section-title">
+                                <Search size={20} style={{ color: 'var(--primary)' }} /> My Saved Searches
                             </h2>
                         </div>
                         {savedSearches.length === 0 ? (
                             <div className="empty-state">
-                                <div className="empty-state-icon">🔔</div>
+                                <div className="empty-state-icon">🔍</div>
                                 No saved searches yet. Search for a topic and click "Save Alert".
                             </div>
                         ) : (
@@ -363,16 +714,6 @@ function ResearcherDashboard() {
                                         <div className="alert-info" onClick={() => navigate(`/?q=${encodeURIComponent(s.query)}`)}>
                                             <Search size={15} color="var(--primary)" />
                                             <span className="alert-query">{s.query}</span>
-                                            {s.alert_count > 0 && (
-                                                <span
-                                                    className="badge badge-new"
-                                                    onClick={(e) => { e.stopPropagation(); clearAlerts(s.id); }}
-                                                    style={{ cursor: 'pointer' }}
-                                                    title="Click to mark as read"
-                                                >
-                                                    {s.alert_count} New
-                                                </span>
-                                            )}
                                         </div>
                                         <button className="btn btn-ghost btn-sm btn-icon" onClick={() => deleteSearch(s.id)} title="Delete">
                                             <Trash2 size={15} color="var(--danger)" />

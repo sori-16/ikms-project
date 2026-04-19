@@ -43,17 +43,28 @@ document_authors = db.Table('document_authors',
 
 class User(db.Model):
     __tablename__ = 'users'
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.String(255), primary_key=True) # UUID from Supabase
     name = db.Column(db.String(255), nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.Enum(UserRole), nullable=False, default=UserRole.RESEARCHER)
     institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'))
+    is_verified = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Relationship to Institution
     institution = db.relationship('Institution', backref=db.backref('users', lazy=True))
     saved_searches = db.relationship('SavedSearch', backref='user', lazy=True)
+
+class AffiliationRequest(db.Model):
+    __tablename__ = 'affiliation_requests'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
+    institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending') # 'pending', 'approved', 'rejected'
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    user = db.relationship('User', backref=db.backref('affiliation_requests', lazy=True))
+    institution = db.relationship('Institution', backref=db.backref('affiliation_requests', lazy=True))
 
 class Institution(db.Model):
     __tablename__ = 'institutions'
@@ -75,7 +86,8 @@ class Author(db.Model):
     normalized_name = db.Column(db.String(100)) # For grouping variations
     email = db.Column(db.String(255), nullable=True)
     affiliation_id = db.Column(db.Integer, db.ForeignKey('institutions.id'))
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True) # Linked researcher account
+    user_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=True) # Linked researcher account
+    collab_interests = db.Column(db.Text, nullable=True) # For Collaboration Hub
     
     # Relationship to Institution
     institution = db.relationship('Institution', backref=db.backref('authors', lazy=True))
@@ -98,10 +110,16 @@ class Document(db.Model):
     view_count = db.Column(db.Integer, default=0)
     moderation_notes = db.Column(db.Text)
     approved_at = db.Column(db.DateTime)
-    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    approved_by = db.Column(db.String(255), db.ForeignKey('users.id'))
+    
+    # Ecosystem Phase: Ethics & Data
+    erb_status = db.Column(db.String(50), default='none') # 'none', 'submitted', 'verified'
+    erb_letter_path = db.Column(db.String(255), nullable=True)
+    dataset_path = db.Column(db.String(255), nullable=True)
     
     institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'))
-    uploader_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    uploader_id = db.Column(db.String(255), db.ForeignKey('users.id'))
+    is_institutional = db.Column(db.Boolean, default=False)
     
     authors = db.relationship('Author', secondary=document_authors, lazy='subquery',
         backref=db.backref('documents', lazy=True))
@@ -121,7 +139,7 @@ class TopicScore(db.Model):
 class SavedSearch(db.Model):
     __tablename__ = 'saved_searches'
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
     query = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_checked_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -131,18 +149,18 @@ class DownloadLog(db.Model):
     __tablename__ = 'download_logs'
     id = db.Column(db.Integer, primary_key=True)
     document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True) # Nullable for public downloads
+    user_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=True) # Nullable for public downloads
     downloaded_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # Institution Membership & Alerts Table
 class InstitutionMembership(db.Model):
     __tablename__ = 'institution_memberships'
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
     institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'), nullable=False)
     role = db.Column(db.String(50), default='member')
     verified = db.Column(db.Boolean, default=False)
-    verified_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    verified_by = db.Column(db.String(255), db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class SearchAlert(db.Model):
@@ -157,7 +175,29 @@ class ModerationLog(db.Model):
     __tablename__ = 'moderation_logs'
     id = db.Column(db.Integer, primary_key=True)
     document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
-    moderator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    moderator_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
     action = db.Column(db.String(50)) # 'approved', 'rejected', 'revision'
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class AuthorClaim(db.Model):
+    __tablename__ = 'author_claims'
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
+    user_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
+    status = db.Column(db.Enum(DocumentStatus), default=DocumentStatus.PENDING)
+    moderation_notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    document = db.relationship('Document', backref='claims', lazy=True)
+    user = db.relationship('User', backref='claims', lazy=True)
+
+class Engagement(db.Model):
+    __tablename__ = 'engagements'
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
+    user_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
+    type = db.Column(db.String(20), default='like') # 'like', 'vote'
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    document = db.relationship('Document', backref=db.backref('likes', lazy='dynamic'))

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { BarChart3, TrendingUp, Building2, Download, Award, BookOpen } from 'lucide-react';
+import { BarChart3, TrendingUp, Building2, Download, Award, BookOpen, Share2, Users } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -103,6 +103,107 @@ function AnalyticsDashboard() {
                                         ))}
                                     </div>
                                 ) : <div className="empty-state" style={{ padding: '1.5rem' }}>No data yet</div>}
+                            </div>
+                        </div>
+
+                        {/* National Research Heatmap */}
+                        <div className="card" style={{ marginTop: '1.5rem' }}>
+                            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontFamily: 'var(--font-heading)', fontSize: '1.15rem', marginBottom: '1.25rem' }}>
+                                <Award size={20} color="var(--primary)" /> National Research Topic Heatmap
+                            </h2>
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                                Which institutions are leading in specific research domains?
+                            </p>
+                            {stats?.topic_heatmap?.length > 0 ? (
+                                <div className="heatmap-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                                    {stats.topic_heatmap.map((item, i) => (
+                                        <div key={i} style={{
+                                            padding: '1.25rem',
+                                            background: 'rgba(var(--primary-rgb), 0.04)',
+                                            borderRadius: 'var(--radius-md)',
+                                            borderLeft: '4px solid var(--primary)'
+                                        }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                {item.institution}
+                                            </div>
+                                            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary)', margin: '0.4rem 0' }}>
+                                                {item.top_topic}
+                                            </div>
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                                {item.paper_count} papers in this domain
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : <div className="empty-state">No topic mapping data available yet.</div>}
+                        </div>
+
+                        {/* ── Institutional Collaboration Network (Graph) ── */}
+                        <div className="card" style={{ marginTop: '1.5rem', background: 'var(--bg-card)', position: 'relative', overflow: 'hidden' }}>
+                            <div style={{ position: 'absolute', top: 0, right: 0, padding: '1rem' }}>
+                                <Share2 size={40} style={{ opacity: 0.05, color: 'var(--primary)' }} />
+                            </div>
+                            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontFamily: 'var(--font-heading)', fontSize: '1.15rem', marginBottom: '0.5rem' }}>
+                                <Users size={20} color="var(--primary)" /> National Research Collaboration Network
+                            </h2>
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '2rem' }}>
+                                Mapping the flow of co-authorship and knowledge sharing between Ethiopian institutions.
+                            </p>
+
+                            <div style={{ position: 'relative', height: '400px', background: 'rgba(0,0,0,0.02)', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {/* SVG Network Graph (Static Simulation) */}
+                                <svg width="100%" height="100%" viewBox="0 0 800 400" style={{ maxWidth: '800px' }}>
+                                    {/* Connection Lines (Links) */}
+                                    <line x1="200" y1="200" x2="600" y2="200" stroke="var(--primary)" strokeWidth="2" strokeDasharray="5,5" opacity="0.3">
+                                        <animate attributeName="stroke-dashoffset" from="0" to="100" dur="10s" repeatCount="indefinite" />
+                                    </line>
+                                    <line x1="200" y1="200" x2="400" y2="100" stroke="var(--gold)" strokeWidth="2" opacity="0.2" />
+                                    <line x1="400" y1="100" x2="600" y2="200" stroke="var(--gold)" strokeWidth="2" opacity="0.2" />
+                                    <line x1="400" y1="300" x2="200" y2="200" stroke="var(--primary)" strokeWidth="1" opacity="0.1" />
+                                    <line x1="400" y1="300" x2="600" y2="200" stroke="var(--primary)" strokeWidth="1" opacity="0.1" />
+
+                                    {/* Nodes (Institutions) */}
+                                    <g transform="translate(200, 200)">
+                                        <circle r="45" fill="var(--primary)" opacity="0.1" />
+                                        <circle r="35" fill="var(--primary)" />
+                                        <text y="55" fill="var(--text-primary)" fontSize="12" fontWeight="700" textAnchor="middle">AAU (Addis Ababa)</text>
+                                        <text y="5" fill="#fff" fontSize="10" fontWeight="700" textAnchor="middle">HUB</text>
+                                    </g>
+
+                                    <g transform="translate(600, 200)">
+                                        <circle r="35" fill="var(--primary)" opacity="0.1" />
+                                        <circle r="25" fill="var(--primary)" />
+                                        <text y="45" fill="var(--text-primary)" fontSize="12" fontWeight="700" textAnchor="middle">Jimma University</text>
+                                    </g>
+
+                                    <g transform="translate(400, 100)">
+                                        <circle r="30" fill="var(--gold)" opacity="0.1" />
+                                        <circle r="20" fill="var(--gold)" />
+                                        <text y="-30" fill="var(--text-primary)" fontSize="12" fontWeight="700" textAnchor="middle">Bahir Dar University</text>
+                                    </g>
+
+                                    <g transform="translate(400, 300)">
+                                        <circle r="30" fill="var(--primary-light)" opacity="0.1" />
+                                        <circle r="20" fill="var(--primary-light)" />
+                                        <text y="40" fill="var(--text-primary)" fontSize="12" fontWeight="700" textAnchor="middle">Hawassa University</text>
+                                    </g>
+
+                                    {/* Pulse Effect on AAU Hub */}
+                                    <circle cx="200" cy="200" r="35" fill="none" stroke="var(--primary)" strokeWidth="2">
+                                        <animate attributeName="r" from="35" to="60" dur="2s" repeatCount="indefinite" />
+                                        <animate attributeName="opacity" from="0.5" to="0" dur="2s" repeatCount="indefinite" />
+                                    </circle>
+                                </svg>
+
+                                <div style={{ position: 'absolute', bottom: '20px', right: '20px', background: 'rgba(255,255,255,0.9)', padding: '10px 15px', borderRadius: 'var(--radius-md)', fontSize: '0.8rem', border: '1px solid var(--border)' }}>
+                                    <strong>Legend:</strong>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '5px' }}>
+                                        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--primary)' }} /> Core Research Node
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px' }}>
+                                        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--gold)' }} /> Cross-Regional Co-Authorship
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </>
