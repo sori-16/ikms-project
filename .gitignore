@@ -206,7 +206,7 @@ marimo/_static/
 marimo/_lsp/
 
 # Custom Project Ignores
-backend/instance/ikms.db
+backend/ikms.db
 node_modules/
 frontend/node_modules/
 .env

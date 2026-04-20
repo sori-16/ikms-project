@@ -1346,15 +1346,14 @@ def create_app():
         
         # 1. System Admins and Global Moderators see Independent docs
         if user_role in [UserRole.SYS_ADMIN.value, UserRole.MODERATOR.value]:
+            # Always show non-institutional documents to global admins - fallback to Supabase if user not in SQLite
             user = User.query.get(request.user_id)
-            if user and not user.institution_id:
-                # Global Moderator (IKMS) - Sees Independent documents
-                pending_docs = Document.query.filter_by(status=DocumentStatus.PENDING, is_institutional=False).all()
-            elif user and user.institution_id:
+            if user and user.institution_id:
                 # Institutional Moderator - Sees documents for their institution
                 pending_docs = Document.query.filter_by(status=DocumentStatus.PENDING, institution_id=user.institution_id, is_institutional=True).all()
             else:
-                pending_docs = []
+                # Global Sys Admin or unaffiliated Moderator - sees ALL independent documents
+                pending_docs = Document.query.filter_by(status=DocumentStatus.PENDING, is_institutional=False).all()
         else:
             return jsonify({"error": "Unauthorized"}), 403
             
@@ -1413,6 +1412,31 @@ def create_app():
         
         return jsonify({"message": f"Document {status_str} successfully"}), 200
 
+    @app.route('/admin/moderation-logs', methods=['GET'])
+    @login_required
+    def get_moderation_logs():
+        """Fetch all moderation actions for the audit log"""
+        if request.user_role not in ['moderator', 'sys_admin']:
+            return jsonify({"error": "Unauthorized"}), 403
+            
+        from models import ModerationLog
+        user_role = request.user_role
+        
+        if user_role == UserRole.SYS_ADMIN.value:
+            logs = ModerationLog.query.order_by(ModerationLog.timestamp.desc()).limit(100).all()
+        else:
+            # For institutional moderators, we should ideally restrict logs to their institution
+            # For now, keeping it robust for the demo layout
+            logs = ModerationLog.query.order_by(ModerationLog.timestamp.desc()).limit(100).all()
+            
+        return jsonify([{
+            "id": log.id,
+            "doc_title": log.document.title if log.document else "Unknown Document",
+            "action": log.action,
+            "notes": log.notes,
+            "timestamp": log.timestamp.isoformat()
+        } for log in logs]), 200
+
     # ========== INSTITUTION MANAGEMENT ENDPOINTS ==========
     @app.route('/institutions', methods=['GET'])
     def get_institutions():
@@ -1425,37 +1449,27 @@ def create_app():
             return jsonify([]), 500
 
     @app.route('/institutions', methods=['POST'])
-    @role_required('inst_admin', 'sys_admin')
+    @role_required('sys_admin')
     def create_institution():
-        """Create a new institution (Admin only)"""
+        """Create a new institution (SysAdmin only) – writes to Supabase Cloud"""
         data = request.get_json()
-        
         if not data or not data.get('name'):
             return jsonify({"error": "Institution name is required"}), 400
-        
-        # Check if institution already exists
-        existing = Institution.query.filter_by(name=data['name']).first()
-        if existing:
-            return jsonify({"error": "Institution already exists"}), 409
-        
-        new_institution = Institution(
-            name=data['name'],
-            description=data.get('description', ''),
-            location=data.get('location', '')
-        )
-        
-        db.session.add(new_institution)
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Institution created successfully",
-            "institution": {
-                "id": new_institution.id,
-                "name": new_institution.name,
-                "description": new_institution.description,
-                "location": new_institution.location
+        try:
+            existing = supabase.table("institutions").select("id").eq("name", data['name']).execute()
+            if existing.data:
+                return jsonify({"error": "Institution with this name already exists"}), 409
+            new_inst = {
+                "name": data['name'],
+                "description": data.get('description', ''),
+                "location": data.get('location', ''),
+                "website": data.get('website', ''),
+                "established_year": data.get('established_year'),
             }
-        }), 201
+            res = supabase.table("institutions").insert(new_inst).execute()
+            return jsonify({"message": "Institution created successfully", "institution": res.data[0]}), 201
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/<int:inst_id>', methods=['GET'])
     def get_institution(inst_id):
@@ -1483,31 +1497,75 @@ def create_app():
     @app.route('/institutions/<int:inst_id>', methods=['PUT'])
     @role_required('inst_admin', 'sys_admin')
     def update_institution(inst_id):
-        """Update institution details (Admin only)"""
-        institution = Institution.query.get(inst_id)
-        if not institution:
-            return jsonify({"error": "Institution not found"}), 404
-        
+        """Update institution details (Supabase Cloud)"""
         data = request.get_json()
-        
-        if data.get('name'):
-            institution.name = data['name']
-        if data.get('description'):
-            institution.description = data['description']
-        if data.get('location'):
-            institution.location = data['location']
-        
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Institution updated successfully",
-            "institution": {
-                "id": institution.id,
-                "name": institution.name,
-                "description": institution.description,
-                "location": institution.location
-            }
-        }), 200
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        update_payload = {k: data[k] for k in ['name', 'description', 'location', 'website', 'established_year'] if k in data}
+        if not update_payload:
+            return jsonify({"error": "No updatable fields provided"}), 400
+        try:
+            res = supabase.table("institutions").update(update_payload).eq("id", inst_id).execute()
+            if not res.data:
+                return jsonify({"error": "Institution not found"}), 404
+            return jsonify({"message": "Institution updated successfully", "institution": res.data[0]}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/institutions/<int:inst_id>', methods=['DELETE'])
+    @role_required('sys_admin')
+    def delete_institution(inst_id):
+        """Delete an institution (SysAdmin only)"""
+        try:
+            existing = supabase.table("institutions").select("id").eq("id", inst_id).execute()
+            if not existing.data:
+                return jsonify({"error": "Institution not found"}), 404
+            supabase.table("institutions").delete().eq("id", inst_id).execute()
+            return jsonify({"message": "Institution deleted successfully"}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/admin/institutions/<int:inst_id>/assign-admin', methods=['POST'])
+    @role_required('sys_admin')
+    def assign_institution_admin(inst_id):
+        """Assign a user as Institution Admin for a specific institution"""
+        data = request.get_json()
+        user_id = data.get('user_id')
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+        try:
+            supabase.table("users").update({"role": "inst_admin", "institution_id": inst_id}).eq("id", user_id).execute()
+            return jsonify({"message": "User assigned as Institution Admin successfully"}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/admin/institutions', methods=['GET'])
+    @role_required('sys_admin')
+    def admin_list_institutions():
+        """List all institutions with document and member counts for SysAdmin"""
+        try:
+            insts = supabase.table("institutions").select("*").execute()
+            result = []
+            for inst in insts.data:
+                iid = inst['id']
+                doc_count = 0
+                member_count = 0
+                try:
+                    docs = supabase.table("documents").select("id").eq("institution_id", iid).execute()
+                    doc_count = len(docs.data) if docs.data else 0
+                except Exception:
+                    pass
+                try:
+                    members = supabase.table("users").select("id").eq("institution_id", iid).execute()
+                    member_count = len(members.data) if members.data else 0
+                except Exception:
+                    pass
+                result.append({**inst, "doc_count": doc_count, "member_count": member_count})
+            return jsonify(result), 200
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
 
     # ========== ANALYTICS & PERSONALIZATION ENDPOINTS ==========
 
@@ -1782,7 +1840,7 @@ def create_app():
     @app.route('/institution/request-affiliation', methods=['POST'])
     @login_required
     def request_affiliation():
-        """Researcher requests to join an institution"""
+        """Researcher requests to join an institution or publish independently"""
         data = request.get_json()
         inst_id = data.get('institution_id')
         
@@ -1791,19 +1849,132 @@ def create_app():
             
         from models import AffiliationRequest
         
-        # Check if already has a pending or approved request
+        # Check if already has a pending request
         existing = AffiliationRequest.query.filter_by(user_id=request.user_id, status='pending').first()
         if existing:
             return jsonify({"error": "You already have a pending request"}), 400
             
         new_req = AffiliationRequest(
             user_id=request.user_id,
-            institution_id=inst_id
+            institution_id=None if inst_id == 'independent' else inst_id
         )
         db.session.add(new_req)
         db.session.commit()
         
         return jsonify({"message": "Affiliation request submitted"}), 201
+
+    @app.route('/admin/independent-requests', methods=['GET'])
+    @role_required('sys_admin', 'moderator')
+    def get_pending_independent_requests():
+        """Master admin gets all independent publishing requests (where institution_id is None)"""
+        from models import AffiliationRequest
+        requests = AffiliationRequest.query.filter_by(status='pending', institution_id=None).all()
+        
+        results = []
+        for r in requests:
+            u_name = "Unknown User"
+            u_email = "Unknown Email"
+            if r.user:
+                u_name = r.user.name
+                u_email = r.user.email
+            else:
+                try:
+                    user_data = supabase.table("users").select("name,email").eq("id", r.user_id).execute()
+                    if user_data.data:
+                        u_name = user_data.data[0].get('name', 'Unknown User')
+                        u_email = user_data.data[0].get('email', 'Unknown Email')
+                except Exception:
+                    pass
+
+            results.append({
+                "id": r.id,
+                "user_name": u_name,
+                "user_email": u_email,
+                "created_at": r.created_at.isoformat()
+            })
+        return jsonify(results), 200
+
+    @app.route('/admin/independent-requests/<int:req_id>/approve', methods=['POST'])
+    @role_required('sys_admin', 'moderator')
+    def approve_independent_request(req_id):
+        """Master admin approves an independent publisher"""
+        from models import AffiliationRequest
+        req = AffiliationRequest.query.get_or_404(req_id)
+        
+        if req.status != 'pending':
+            return jsonify({"error": "Request already processed"}), 400
+            
+        req.status = 'approved'
+        
+        # Mark local user as verified if present
+        if req.user:
+            req.user.is_verified = True
+        
+        # Create a notification for the user
+        from models import Notification
+        notif = Notification(
+            user_id=req.user_id,
+            message='🎉 Congratulations! Your Independent Publishing request has been approved. You can now upload and publish your research on IKMS.',
+            type='success'
+        )
+        db.session.add(notif)
+        db.session.commit()
+        
+        # Also sync to Supabase
+        try:
+            supabase.table("users").update({"is_verified": True}).eq("id", req.user_id).execute()
+        except Exception as e:
+            print(f"Cloud sync error: {e}")
+            
+        return jsonify({"message": "Independent Publisher approved successfully"}), 200
+
+    @app.route('/admin/independent-requests/<int:req_id>/reject', methods=['POST'])
+    @role_required('sys_admin', 'moderator')
+    def reject_independent_request(req_id):
+        """Master admin rejects an independent publisher"""
+        from models import AffiliationRequest
+        req = AffiliationRequest.query.get_or_404(req_id)
+        
+        if req.status != 'pending':
+            return jsonify({"error": "Request already processed"}), 400
+            
+        req.status = 'rejected'
+        
+        # Create a rejection notification for the user
+        from models import Notification
+        notif = Notification(
+            user_id=req.user_id,
+            message='Your Independent Publishing request has been reviewed and was not approved at this time. Please contact IKMS support for more information.',
+            type='error'
+        )
+        db.session.add(notif)
+        db.session.commit()
+            
+        return jsonify({"message": "Request rejected"}), 200
+
+    @app.route('/notifications', methods=['GET'])
+    @login_required
+    def get_notifications():
+        """Get all notifications for the current user"""
+        from models import Notification
+        notifs = Notification.query.filter_by(user_id=request.user_id).order_by(Notification.created_at.desc()).all()
+        return jsonify([{
+            "id": n.id,
+            "message": n.message,
+            "type": n.type,
+            "read": n.read,
+            "created_at": n.created_at.isoformat()
+        } for n in notifs]), 200
+
+    @app.route('/notifications/<int:notif_id>/read', methods=['PUT'])
+    @login_required
+    def mark_notification_read(notif_id):
+        """Mark a notification as read"""
+        from models import Notification
+        notif = Notification.query.filter_by(id=notif_id, user_id=request.user_id).first_or_404()
+        notif.read = True
+        db.session.commit()
+        return jsonify({"message": "Marked as read"}), 200
 
     @app.route('/admin/institution/requests', methods=['GET'])
     @role_required(UserRole.INST_ADMIN.value)

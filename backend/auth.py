@@ -24,9 +24,18 @@ def login_required(f):
             request.user_id = auth_response.user.id
             request.user_email = auth_response.user.email
             
-            # Get role from metadata (set during signup)
-            request.user_role = auth_response.user.user_metadata.get('role', 'researcher')
+            # Get role from metadata originally
+            role = auth_response.user.user_metadata.get('role', 'researcher')
             
+            # Fetch latest role from database to handle promotions
+            try:
+                db_res = supabase.table("users").select("role").eq("id", request.user_id).execute()
+                if db_res.data and db_res.data[0].get('role'):
+                    role = db_res.data[0].get('role')
+            except Exception as e:
+                pass # Fallback to metadata role if query fails
+            
+            request.user_role = role
             return f(*args, **kwargs)
         except Exception as e:
             return jsonify({"error": f"Authentication failed: {str(e)}"}), 401
@@ -53,18 +62,23 @@ def role_required(*allowed_roles):
                 # Check JWT metadata first
                 role = auth_response.user.user_metadata.get('role', 'researcher')
                 
-                # Fallback to database if metadata doesn't grant access but they might be promoted in the DB
-                if role not in allowed_roles:
+                # Always check database for latest role to ensure consistency
+                try:
                     db_user_res = supabase.table("users").select("role").eq("id", auth_response.user.id).execute()
-                    if db_user_res.data and db_user_res.data[0].get('role') in allowed_roles:
+                    if db_user_res.data and db_user_res.data[0].get('role'):
                         role = db_user_res.data[0].get('role')
-                    else:
-                        return jsonify({"error": "Insufficient permissions"}), 403
+                except Exception as e:
+                    pass
+                
+                if role not in allowed_roles:
+                    return jsonify({"error": f"Insufficient permissions: {role} vs {allowed_roles}"}), 403
                 
                 request.user_id = auth_response.user.id
                 request.user_role = role
                 return f(*args, **kwargs)
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 return jsonify({"error": f"Authorization failed: {str(e)}"}), 401
         
         return decorated_function
