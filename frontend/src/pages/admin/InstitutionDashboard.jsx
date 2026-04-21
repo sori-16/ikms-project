@@ -50,6 +50,11 @@ function InstitutionDashboard() {
     const [logoUploading, setLogoUploading] = useState(false);
     const [saving, setSaving] = useState(false);
 
+    // Bulk Upload
+    const [bulkUploading, setBulkUploading] = useState(false);
+    const [bulkResult, setBulkResult] = useState(null);
+    const [showBulkUploader, setShowBulkUploader] = useState(false);
+
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -104,6 +109,30 @@ function InstitutionDashboard() {
             showToast(`Request ${action}d successfully.`);
             fetchAffRequests(); fetchMembers();
         } catch { showToast('Action failed.', 'error'); }
+    };
+
+    const handleBulkUpload = async (e) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+        setBulkUploading(true);
+        setBulkResult(null);
+        const fd = new FormData();
+        Array.from(files).forEach(f => fd.append('files', f));
+        try {
+            const r = await axios.post(`${API}/admin/institution/bulk-upload`, fd, {
+                headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
+            });
+            setBulkResult({ success: true, message: r.data.message, errors: r.data.errors || [] });
+            showToast(r.data.message);
+            fetchAllDocs(); fetchStats();
+        } catch (err) {
+            const msg = err.response?.data?.error || 'Bulk upload failed.';
+            setBulkResult({ success: false, message: msg, errors: [] });
+            showToast(msg, 'error');
+        }
+        setBulkUploading(false);
+        // Reset the input so the same files can be re-uploaded if needed
+        e.target.value = '';
     };
 
     // --- RENDER SIDEBAR ---
@@ -340,7 +369,7 @@ function InstitutionDashboard() {
                             <tr key={'doc-'+doc.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                 <td style={{ padding: '1rem 1.5rem', fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', maxWidth: 300, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.title}</td>
                                 <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem' }}><FileText size={14} style={{ marginRight: 4, verticalAlign: -2 }}/> Document</td>
-                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{doc.publication_date ? new Date(doc.publication_date).toLocaleDateString() : 'N/A'}</td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'N/A'}</td>
                                 <td style={{ padding: '1rem 1.5rem' }}><StatusBadge status="pending" /></td>
                                 <td style={{ padding: '1rem 1.5rem', textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                                     <Link to={`/document/${doc.id}`} target="_blank" style={{ background: '#f1f5f9', color: '#0f172a', textDecoration: 'none', padding: '0.4rem 0.8rem', borderRadius: 4, fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}><Eye size={14}/> View</Link>
@@ -433,8 +462,31 @@ function InstitutionDashboard() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Institution Documents</h2>
-                <button className="btn btn-primary" style={{ background: '#0f2b3d' }}><UploadCloud size={16}/> Bulk Upload</button>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#0f2b3d', color: '#fff', padding: '0.5rem 1.2rem', borderRadius: 6, fontWeight: 600, fontSize: '0.9rem', cursor: bulkUploading ? 'not-allowed' : 'pointer', opacity: bulkUploading ? 0.7 : 1 }}>
+                    <UploadCloud size={16}/> {bulkUploading ? 'Uploading...' : 'Bulk Upload'}
+                    <input type="file" accept=".pdf" multiple style={{ display: 'none' }} onChange={handleBulkUpload} disabled={bulkUploading} />
+                </label>
             </div>
+
+            {/* Bulk Upload Result Banner */}
+            {bulkResult && (
+                <div style={{ padding: '1rem 1.5rem', borderRadius: 8, background: bulkResult.success ? '#e0f2fe' : '#fee2e2', color: bulkResult.success ? '#0369a1' : '#b91c1c', fontSize: '0.9rem', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>{bulkResult.message}</span>
+                    {bulkResult.errors?.length > 0 && (
+                        <span style={{ fontSize: '0.8rem', fontWeight: 400, marginLeft: '1rem' }}>
+                            {bulkResult.errors.length} file(s) failed: {bulkResult.errors.map(e => e.file).join(', ')}
+                        </span>
+                    )}
+                    <button onClick={() => setBulkResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '1rem', lineHeight: 1, color: 'inherit' }}>×</button>
+                </div>
+            )}
+            
+            {bulkUploading && (
+                <div style={{ padding: '1rem 1.5rem', borderRadius: 8, background: '#fef3c7', color: '#b45309', fontSize: '0.9rem', fontWeight: 600 }}>
+                    ⏳ Processing PDFs — extracting text, running AI pipeline, uploading to cloud. This may take a minute...
+                </div>
+            )}
+
             <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                     <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
@@ -449,7 +501,7 @@ function InstitutionDashboard() {
                         {allDocs.map(doc => (
                             <tr key={doc.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                 <td style={{ padding: '1rem 1.5rem', fontSize: '0.9rem', fontWeight: 500, color: '#0f172a', maxWidth: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.title}</td>
-                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{doc.publication_date ? new Date(doc.publication_date).toLocaleDateString() : 'N/A'}</td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : 'N/A'}</td>
                                 <td style={{ padding: '1rem 1.5rem' }}><StatusBadge status={doc.status} /></td>
                                 <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
                                     <Link to={`/document/${doc.id}`} target="_blank" style={{ color: '#0ea5e9', fontSize: '0.85rem', fontWeight: 600, textDecoration: 'none' }}>View Page</Link>

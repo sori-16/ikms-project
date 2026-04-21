@@ -15,8 +15,21 @@ def login_required(f):
             token = token[7:]
         
         try:
-            # Verify token with Supabase
-            auth_response = supabase.auth.get_user(token)
+            # Verify token with Supabase (with retry for transient Windows socket errors)
+            auth_response = None
+            last_err = None
+            for _attempt in range(3):
+                try:
+                    auth_response = supabase.auth.get_user(token)
+                    break
+                except Exception as net_err:
+                    last_err = net_err
+                    import time
+                    time.sleep(0.3)
+            
+            if auth_response is None:
+                return jsonify({"error": f"Auth network error: {last_err}"}), 401
+            
             if not auth_response.user:
                 return jsonify({"error": "Invalid or expired token"}), 401
             
@@ -55,7 +68,21 @@ def role_required(*allowed_roles):
                 token = token[7:]
             
             try:
-                auth_response = supabase.auth.get_user(token)
+                # Verify token with Supabase (with retry for transient Windows socket errors)
+                auth_response = None
+                last_err = None
+                for _attempt in range(3):
+                    try:
+                        auth_response = supabase.auth.get_user(token)
+                        break
+                    except Exception as net_err:
+                        last_err = net_err
+                        import time
+                        time.sleep(0.3)
+                
+                if auth_response is None:
+                    return jsonify({"error": f"Auth network error: {last_err}"}), 401
+                
                 if not auth_response.user:
                     return jsonify({"error": "Invalid or expired token"}), 401
                 

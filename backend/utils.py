@@ -69,3 +69,30 @@ def clean_text(text):
             cleaned_tokens.append(token.text)
     
     return " ".join(cleaned_tokens)
+
+def process_document_full(filepath):
+    """
+    Extracts text AND smart metadata (abstract, authors, year) from a PDF.
+    Returns a dict with all extracted fields.
+    """
+    from metadata_utils import extract_abstract, extract_authors, extract_year
+    
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"File not found: {filepath}")
+
+    doc = fitz.open(filepath)
+    raw_text = ""
+    for page in doc:
+        raw_text += page.get_text()
+    
+    # Smart Metadata Extraction
+    metadata = {
+        "raw_text": raw_text,
+        "abstract": extract_abstract(raw_text),
+        "authors": extract_authors(raw_text, doc.metadata),
+        "year": extract_year(raw_text, doc.metadata),
+        "title": doc.metadata.get('title') if doc.metadata.get('title') else os.path.splitext(os.path.basename(filepath))[0]
+    }
+    
+    doc.close()
+    return metadata

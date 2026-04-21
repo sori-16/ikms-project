@@ -39,6 +39,11 @@ function MasterAdminDashboard() {
     const [stats, setStats] = useState(null);
     const [users, setUsers] = useState([]);
     const [institutions, setInstitutions] = useState([]);
+    const [indyRequests, setIndyRequests] = useState([]);
+
+    // Per-section loading
+    const [dataLoading, setDataLoading] = useState({});
+    const setSection = (key, val) => setDataLoading(p => ({...p, [key]: val}));
 
     // UI States
     const [activeTab, setActiveTab] = useState('queue');
@@ -48,6 +53,9 @@ function MasterAdminDashboard() {
     // Modals
     const [rejectModal, setRejectModal] = useState(null); // { docId, reason }
     const [revisionModal, setRevisionModal] = useState(null); // { docId, notes }
+    const [instModal, setInstModal] = useState(null); // { mode: 'create'|'edit', data }
+    const [assignModal, setAssignModal] = useState(null); // { instId, userId }
+    const [deleteInstId, setDeleteInstId] = useState(null);
 
     useEffect(() => {
         const u = getUser();
@@ -64,14 +72,18 @@ function MasterAdminDashboard() {
         loadAllData(u.role);
     }, [navigate]);
 
-    const loadAllData = async (role) => {
-        setLoading(true);
-        const fetches = [fetchPending(), fetchClaims(), fetchAudit()];
+    const loadAllData = (role) => {
+        // Fire all fetches immediately, UI shows without waiting
+        fetchPending();
+        fetchClaims();
+        fetchAudit();
         if (role === 'sys_admin') {
-            fetches.push(fetchStats(), fetchUsers(), fetchInstitutions());
+            fetchStats();
+            fetchUsers();
+            fetchInstitutions();
+            fetchIndyRequests();
         }
-        await Promise.allSettled(fetches);
-        setLoading(false);
+        setLoading(false); // Show UI right away
     };
 
     const showToast = (msg, type = 'success') => {
@@ -80,12 +92,13 @@ function MasterAdminDashboard() {
     };
 
     // --- Fetchers ---
-    const fetchPending = async () => { try { const r = await axios.get(`${API}/documents/pending`, { headers: getAuthHeaders() }); setPendingDocs(r.data); } catch {} };
-    const fetchClaims = async () => { try { const r = await axios.get(`${API}/admin/author-claims`, { headers: getAuthHeaders() }); setClaims(r.data); } catch {} };
-    const fetchAudit = async () => { try { const r = await axios.get(`${API}/admin/moderation-logs`, { headers: getAuthHeaders() }); setAuditLog(r.data); } catch {} };
-    const fetchStats = async () => { try { const r = await axios.get(`${API}/admin/stats`, { headers: getAuthHeaders() }); setStats(r.data); } catch {} };
-    const fetchUsers = async () => { try { const r = await axios.get(`${API}/admin/users`, { headers: getAuthHeaders() }); setUsers(r.data); } catch {} };
-    const fetchInstitutions = async () => { try { const r = await axios.get(`${API}/institutions`); setInstitutions(r.data); } catch {} };
+    const fetchPending = async () => { setSection('pending', true); try { const r = await axios.get(`${API}/documents/pending`, { headers: getAuthHeaders() }); setPendingDocs(r.data); } catch {} finally { setSection('pending', false); } };
+    const fetchClaims = async () => { setSection('claims', true); try { const r = await axios.get(`${API}/admin/author-claims`, { headers: getAuthHeaders() }); setClaims(r.data); } catch {} finally { setSection('claims', false); } };
+    const fetchAudit = async () => { setSection('audit', true); try { const r = await axios.get(`${API}/admin/moderation-logs`, { headers: getAuthHeaders() }); setAuditLog(r.data); } catch {} finally { setSection('audit', false); } };
+    const fetchStats = async () => { setSection('stats', true); try { const r = await axios.get(`${API}/admin/stats`, { headers: getAuthHeaders() }); setStats(r.data); } catch {} finally { setSection('stats', false); } };
+    const fetchUsers = async () => { setSection('users', true); try { const r = await axios.get(`${API}/admin/users`, { headers: getAuthHeaders() }); setUsers(r.data); } catch {} finally { setSection('users', false); } };
+    const fetchInstitutions = async () => { setSection('insts', true); try { const r = await axios.get(`${API}/admin/institutions`, { headers: getAuthHeaders() }); setInstitutions(r.data); } catch(e) { console.error('Institutions error:', e.response?.data || e.message); } finally { setSection('insts', false); } };
+    const fetchIndyRequests = async () => { setSection('indy', true); try { const r = await axios.get(`${API}/admin/independent-requests`, { headers: getAuthHeaders() }); setIndyRequests(r.data); } catch {} finally { setSection('indy', false); } };
 
     // --- Actions ---
     const handleRoleUpdate = async (userId, newRole) => {
@@ -128,6 +141,54 @@ function MasterAdminDashboard() {
             showToast('Claim approved!');
             fetchClaims(); fetchAudit();
         } catch { showToast('Failed to approve claim.', 'error'); }
+    };
+
+    const handleApproveIndy = async (reqId) => {
+        try {
+            await axios.post(`${API}/admin/independent-requests/${reqId}/approve`, {}, { headers: getAuthHeaders() });
+            showToast('Independent Publisher approved!');
+            fetchIndyRequests(); fetchUsers();
+        } catch { showToast('Failed to approve independent request.', 'error'); }
+    };
+
+    const handleRejectIndy = async (reqId) => {
+        try {
+            await axios.post(`${API}/admin/independent-requests/${reqId}/reject`, {}, { headers: getAuthHeaders() });
+            showToast('Independent Request rejected.');
+            fetchIndyRequests();
+        } catch { showToast('Failed to reject independent request.', 'error'); }
+    };
+
+    const handleSaveInstitution = async () => {
+        if (!instModal?.data?.name?.trim()) { showToast('Institution name is required.', 'error'); return; }
+        try {
+            if (instModal.mode === 'create') {
+                await axios.post(`${API}/institutions`, instModal.data, { headers: getAuthHeaders() });
+                showToast('Institution created!');
+            } else {
+                await axios.put(`${API}/institutions/${instModal.data.id}`, instModal.data, { headers: getAuthHeaders() });
+                showToast('Institution updated!');
+            }
+            setInstModal(null); fetchInstitutions(); fetchStats();
+        } catch (err) { showToast(err.response?.data?.error || 'Failed to save institution.', 'error'); }
+    };
+
+    const handleDeleteInstitution = async () => {
+        if (!deleteInstId) return;
+        try {
+            await axios.delete(`${API}/institutions/${deleteInstId}`, { headers: getAuthHeaders() });
+            showToast('Institution deleted.');
+            setDeleteInstId(null); fetchInstitutions(); fetchStats();
+        } catch (err) { showToast(err.response?.data?.error || 'Failed to delete.', 'error'); }
+    };
+
+    const handleAssignAdmin = async () => {
+        if (!assignModal?.userId || !assignModal?.instId) { showToast('Please select a user.', 'error'); return; }
+        try {
+            await axios.post(`${API}/admin/institutions/${assignModal.instId}/assign-admin`, { user_id: assignModal.userId }, { headers: getAuthHeaders() });
+            showToast('Admin assigned successfully!');
+            setAssignModal(null); fetchInstitutions(); fetchUsers();
+        } catch (err) { showToast(err.response?.data?.error || 'Failed to assign admin.', 'error'); }
     };
 
     // --- SIDEBAR ---
@@ -330,7 +391,34 @@ function MasterAdminDashboard() {
         const filtered = users.filter(u => (u.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (u.email || '').toLowerCase().includes(searchQuery.toLowerCase()));
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                {indyRequests.length > 0 && (
+                    <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', borderLeft: '4px solid var(--info)' }}>
+                        <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between' }}>
+                            <h3 style={{ margin: 0, fontSize: '1rem', color: '#0f172a' }}>Independent Publishing Requests</h3>
+                            <span style={{ background: 'var(--info)', color: '#fff', padding: '2px 8px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 600 }}>{indyRequests.length} Pending</span>
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                            <tbody>
+                                {indyRequests.map(req => (
+                                    <tr key={req.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                        <td style={{ padding: '1rem 1.5rem', fontSize: '0.9rem', fontWeight: 600 }}>{req.user_name}</td>
+                                        <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{req.user_email}</td>
+                                        <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{new Date(req.created_at).toLocaleDateString()}</td>
+                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
+                                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                                <button onClick={() => handleApproveIndy(req.id)} className="btn btn-sm" style={{ background: '#dcfce7', color: '#166534', border: 'none' }}><CheckCircle size={14}/> Approve</button>
+                                                <button onClick={() => handleRejectIndy(req.id)} className="btn btn-sm btn-ghost" style={{ color: '#ef4444' }}><XCircle size={14}/> Reject</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+                
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>System User Directory</h2>
                     <div style={{ position: 'relative', width: 300 }}>
                         <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: 12, top: 10 }} />
                         <input type="text" placeholder="Search accounts..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 36px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none' }} />
@@ -392,20 +480,54 @@ function MasterAdminDashboard() {
     );
 
     const renderInstitutions = () => (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-            {institutions.map(inst => (
-                <div key={inst.id} style={{ background: '#fff', borderRadius: 8, padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', borderTop: '4px solid #0f2b3d' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                        <div style={{ width: 40, height: 40, borderRadius: 8, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {inst.logo_path ? <img src={inst.logo_path} style={{width:'100%', height:'100%', objectFit:'cover', borderRadius:8}} /> : <Building2 size={20} color="#94a3b8"/>}
-                        </div>
-                        <div>
-                            <div style={{ fontWeight: 700, color: '#0f172a' }}>{inst.name}</div>
-                            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{inst.location}</div>
-                        </div>
-                    </div>
-                </div>
-            ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Institution Registry</h2>
+                <button onClick={() => setInstModal({ mode: 'create', data: { name: '', description: '', location: '', website: '', established_year: '' } })} style={{ background: '#0f2b3d', color: '#fff', border: 'none', padding: '0.6rem 1.2rem', borderRadius: 6, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Building2 size={16}/> + Add Institution
+                </button>
+            </div>
+            <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                        <tr>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Institution</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Location</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b', textAlign: 'center' }}>📄 Docs</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b', textAlign: 'center' }}>👥 Members</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {institutions.map(inst => (
+                            <tr key={inst.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '1rem 1.5rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <div style={{ width: 36, height: 36, borderRadius: 6, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+                                            {inst.logo_path ? <img src={inst.logo_path} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="logo" /> : <Building2 size={18} color="#94a3b8" />}
+                                        </div>
+                                        <div>
+                                            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a' }}>{inst.name}</div>
+                                            {inst.website && <div style={{ fontSize: '0.75rem', color: '#0ea5e9' }}>{inst.website}</div>}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{inst.location || '—'}</td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.9rem', fontWeight: 700, color: '#0f172a', textAlign: 'center' }}>{inst.doc_count ?? '—'}</td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.9rem', fontWeight: 700, color: '#0f172a', textAlign: 'center' }}>{inst.member_count ?? '—'}</td>
+                                <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
+                                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                        <button onClick={() => setAssignModal({ instId: inst.id, instName: inst.name, userId: '' })} style={{ background: '#e0f2fe', color: '#0369a1', border: 'none', padding: '0.35rem 0.7rem', borderRadius: 4, fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>Assign Admin</button>
+                                        <button onClick={() => setInstModal({ mode: 'edit', data: { id: inst.id, name: inst.name, description: inst.description || '', location: inst.location || '', website: inst.website || '', established_year: inst.established_year || '' } })} style={{ background: '#f1f5f9', color: '#0f172a', border: 'none', padding: '0.35rem 0.7rem', borderRadius: 4, fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>Edit</button>
+                                        <button onClick={() => setDeleteInstId(inst.id)} style={{ background: '#fee2e2', color: '#b91c1c', border: 'none', padding: '0.35rem 0.7rem', borderRadius: 4, fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>Delete</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                        {institutions.length === 0 && <tr><td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>No institutions registered yet.</td></tr>}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 
@@ -475,6 +597,64 @@ function MasterAdminDashboard() {
                         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
                             <button onClick={() => setRevisionModal(null)} style={{ padding: '0.5rem 1rem', background: '#f1f5f9', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
                             <button disabled={!revisionModal.notes.trim()} onClick={handleRequestRevision} style={{ padding: '0.5rem 1rem', background: '#f59e0b', color: 'white', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer', opacity: !revisionModal.notes.trim() ? 0.5 : 1 }}>Request Revision</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Institution Create/Edit Modal */}
+            {instModal && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div style={{ background: '#fff', padding: '2rem', borderRadius: 8, width: 500, boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+                        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#0f172a', margin: '0 0 1.5rem' }}><Building2 size={20}/> {instModal.mode === 'create' ? 'Add New Institution' : 'Edit Institution'}</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            {[['name','Institution Name *'], ['location','Location / Headquarters'], ['website','Website URL'], ['established_year','Established Year']].map(([field, label]) => (
+                                <div key={field}>
+                                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: 4 }}>{label}</label>
+                                    <input type={field === 'established_year' ? 'number' : 'text'} value={instModal.data[field] || ''} onChange={e => setInstModal({...instModal, data: {...instModal.data, [field]: e.target.value}})} style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none' }} />
+                                </div>
+                            ))}
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: 4 }}>Description</label>
+                                <textarea rows={3} value={instModal.data.description || ''} onChange={e => setInstModal({...instModal, data: {...instModal.data, description: e.target.value}})} style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none', resize: 'vertical' }} />
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
+                            <button onClick={() => setInstModal(null)} style={{ padding: '0.5rem 1rem', background: '#f1f5f9', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                            <button onClick={handleSaveInstitution} style={{ padding: '0.5rem 1.2rem', background: '#0f2b3d', color: 'white', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>{instModal.mode === 'create' ? 'Create Institution' : 'Save Changes'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Institution Confirm */}
+            {deleteInstId && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div style={{ background: '#fff', padding: '2rem', borderRadius: 8, width: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+                        <h3 style={{ color: '#ef4444', margin: '0 0 1rem', display: 'flex', alignItems: 'center', gap: 8 }}><AlertTriangle size={20}/> Confirm Deletion</h3>
+                        <p style={{ fontSize: '0.9rem', color: '#64748b' }}>This will permanently delete the institution and all associated metadata. This cannot be undone.</p>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
+                            <button onClick={() => setDeleteInstId(null)} style={{ padding: '0.5rem 1rem', background: '#f1f5f9', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                            <button onClick={handleDeleteInstitution} style={{ padding: '0.5rem 1rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>Delete Forever</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Assign Admin Modal */}
+            {assignModal && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div style={{ background: '#fff', padding: '2rem', borderRadius: 8, width: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+                        <h3 style={{ color: '#0f172a', margin: '0 0 0.5rem', display: 'flex', alignItems: 'center', gap: 8 }}><Shield size={20}/> Assign Institution Admin</h3>
+                        <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.5rem' }}>Assigning to: <strong>{assignModal.instName}</strong></p>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: 4 }}>Select User</label>
+                        <select value={assignModal.userId} onChange={e => setAssignModal({...assignModal, userId: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none' }}>
+                            <option value="">— Choose a user —</option>
+                            {users.filter(u => u.role === 'researcher' || u.role === 'inst_admin').map(u => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+                        </select>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
+                            <button onClick={() => setAssignModal(null)} style={{ padding: '0.5rem 1rem', background: '#f1f5f9', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                            <button onClick={handleAssignAdmin} style={{ padding: '0.5rem 1.2rem', background: '#0f2b3d', color: 'white', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>Confirm Assignment</button>
                         </div>
                     </div>
                 </div>

@@ -59,7 +59,7 @@ class AffiliationRequest(db.Model):
     __tablename__ = 'affiliation_requests'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
-    institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'), nullable=False)
+    institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'), nullable=True)
     status = db.Column(db.String(20), default='pending') # 'pending', 'approved', 'rejected'
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -201,3 +201,14 @@ class Engagement(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     document = db.relationship('Document', backref=db.backref('likes', lazy='dynamic'))
+
+class Notification(db.Model):
+    __tablename__ = 'notifications'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    type = db.Column(db.String(30), default='info')  # 'success', 'error', 'info'
+    read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('notifications', lazy=True))

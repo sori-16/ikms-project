@@ -1,18 +1,13 @@
 import sqlite3
-import os
 
-db_path = 'instance/ikms.db'
-if os.path.exists(db_path):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+def check_db():
     try:
-        cursor.execute("SELECT * FROM users;")
-        rows = cursor.fetchall()
-        print(f"Users found: {len(rows)}")
-        for row in rows:
-            print(row)
+        conn = sqlite3.connect('instance/app.db')
+        c = conn.cursor()
+        c.execute("SELECT * FROM affiliation_requests")
+        rows = c.fetchall()
+        print("Affiliation Requests:", rows)
     except Exception as e:
-        print(f"Error: {e}")
-    conn.close()
-else:
-    print("Database not found")
+        print("Error:", e)
+
+check_db()

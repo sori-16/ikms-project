@@ -20,7 +20,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from models import db, Document, Institution, Author, User, UserRole, DocumentStatus, SavedSearch, InstitutionalStatus
-from utils import extract_text_from_pdf, clean_text
+from utils import extract_text_from_pdf, clean_text, process_document_full
 from ml_engine import extract_keywords, assign_topics
 from auth import login_required, role_required
 from elasticsearch import Elasticsearch
@@ -33,6 +33,36 @@ from datetime import datetime
 # Global placeholders
 es = None
 INDEX_NAME = 'research_papers'
+
+def sync_authors_to_doc(doc_id, author_names):
+    """
+    Helper to sync a list of author names to a document in local DB.
+    """
+    from models import Author, document_authors
+    try:
+        # 1. Ensure authors exist
+        for name in author_names:
+            author = Author.query.filter_by(name=name).first()
+            if not author:
+                author = Author(name=name, normalized_name=name.lower().strip())
+                db.session.add(author)
+                db.session.flush() # Get ID
+            
+            # 2. Link to document if not already linked
+            # Check association table
+            statement = document_authors.select().where(
+                (document_authors.c.document_id == doc_id) & 
+                (document_authors.c.author_id == author.id)
+            )
+            existing_link = db.session.execute(statement).first()
+            
+            if not existing_link:
+                db.session.execute(document_authors.insert().values(document_id=doc_id, author_id=author.id))
+        
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"Author sync error for doc {doc_id}: {e}")
 
 
 
@@ -218,8 +248,9 @@ def create_app():
             file.save(filepath)
             
             try:
-                # 2. Extract Text
-                raw_text = extract_text_from_pdf(filepath)
+                # 2. Smart Metadata & Text Extraction
+                doc_full = process_document_full(filepath)
+                raw_text = doc_full['raw_text']
                 
                 # 3. Preprocessing & ML
                 cleaned_text = clean_text(raw_text)
@@ -245,9 +276,10 @@ def create_app():
                 file_size = os.path.getsize(filepath)
                 
                 doc_metadata = {
-                    "title": filename,
-                    "abstract": raw_text[:500] if raw_text else "",
+                    "title": doc_full['title'],
+                    "abstract": doc_full['abstract'],
                     "file_size_bytes": file_size,
+                    "publication_date": f"{doc_full['year']}-01-01" if doc_full.get('year') else None,
                     "institution_id": final_inst_id,
                     "status": "pending",
                     "file_path": f"pending/{filename}" # Placeholder
@@ -290,9 +322,10 @@ def create_app():
                 try:
                     new_doc = Document(
                         id=new_doc_id,
-                        title=filename,
-                        abstract=raw_text[:500] if raw_text else "",
+                        title=doc_full['title'],
+                        abstract=doc_full['abstract'],
                         file_size_bytes=file_size,
+                        year=doc_full['year'],
                         institution_id=final_inst_id,
                         uploader_id=request.user_id,
                         is_institutional=final_is_institutional,
@@ -301,6 +334,10 @@ def create_app():
                     )
                     db.session.add(new_doc)
                     db.session.commit()
+                    
+                    # 9. Sync Authors
+                    if doc_full['authors']:
+                        sync_authors_to_doc(new_doc_id, doc_full['authors'])
                 except: db.session.rollback()
                 
                 # 8. Index to Elasticsearch
@@ -790,6 +827,10 @@ def create_app():
                 if not user_res.data or user_res.data[0].get('institution_id') != inst_id or user_res.data[0].get('role') != 'inst_admin':
                     return jsonify({"error": "Unauthorized"}), 403
                     
+            # 0. Fetch institution name
+            inst_info_res = supabase.table("institutions").select("name").eq("id", inst_id).execute()
+            inst_name = inst_info_res.data[0]['name'] if inst_info_res.data else "Unknown Institution"
+
             # 1. Document Stats
             docs_res = supabase.table("documents").select("download_count, view_count")\
                 .eq("institution_id", inst_id)\
@@ -814,6 +855,7 @@ def create_app():
                 "institution_id": inst_id
             }), 200
         except Exception as e:
+            print(f"Analytics error: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/analytics', methods=['GET'])
@@ -850,14 +892,13 @@ def create_app():
                 "id, title, abstract, upload_date, uploader_id"
             ).eq("institution_id", inst_id).eq("status", "pending").eq("is_institutional", True).execute()
             
-            # Optionally resolve uploader names if needed, but returning as is for now
             results = [{
                 "id": d['id'],
                 "title": d['title'],
                 "abstract": d.get('abstract', ''),
                 "upload_date": d.get('upload_date'),
-                "uploader_name": "User " + str(d.get('uploader_id'))[:8] # simplified
-            } for d in pending_docs_res.data]
+                "uploader_name": "User " + str(d.get('uploader_id', 'unknown'))[:8]
+            } for d in (pending_docs_res.data or [])]
             
             return jsonify(results), 200
         except Exception as e:
@@ -993,28 +1034,40 @@ def create_app():
     @login_required
     @role_required(UserRole.INST_ADMIN.value)
     def get_my_affiliation_requests():
-        """Get pending affiliation requests for the admin's institution from Cloud"""
+        """Get pending affiliation requests for the admin's institution from local DB"""
         try:
+            from models import AffiliationRequest
             user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
             if not user_res.data or not user_res.data[0].get('institution_id'):
                 return jsonify({"error": "No institution associated"}), 404
             inst_id = user_res.data[0]['institution_id']
-            reqs_res = supabase.table("affiliation_requests").select(
-                "id, user_id, status, created_at"
-            ).eq("institution_id", inst_id).eq("status", "pending").execute()
+            
+            # Query local SQLite (affiliation_requests are stored locally)
+            reqs = AffiliationRequest.query.filter_by(institution_id=inst_id, status='pending').all()
             results = []
-            for r in (reqs_res.data or []):
-                u_res = supabase.table("users").select("name, email").eq("id", r['user_id']).execute()
-                u = u_res.data[0] if u_res.data else {}
+            for r in reqs:
+                u_name = "Unknown"
+                u_email = ""
+                if r.user:
+                    u_name = r.user.name
+                    u_email = r.user.email
+                else:
+                    try:
+                        u_res = supabase.table("users").select("name, email").eq("id", r.user_id).execute()
+                        if u_res.data:
+                            u_name = u_res.data[0].get('name', 'Unknown')
+                            u_email = u_res.data[0].get('email', '')
+                    except: pass
                 results.append({
-                    "id": r['id'],
-                    "user_id": r['user_id'],
-                    "user_name": u.get('name', 'Unknown'),
-                    "user_email": u.get('email', ''),
-                    "created_at": r['created_at']
+                    "id": r.id,
+                    "user_id": r.user_id,
+                    "user_name": u_name,
+                    "user_email": u_email,
+                    "created_at": r.created_at.isoformat()
                 })
             return jsonify(results), 200
         except Exception as e:
+            print(f"Affiliation requests error: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/affiliation-requests/<req_id>/approve', methods=['POST'])
@@ -2049,8 +2102,9 @@ def create_app():
                     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                     file.save(filepath)
                     
-                    # Extract Text & ML (limit text to 500k chars for NLP to prevent spacy memory errors on huge PDFs)
-                    raw_text = extract_text_from_pdf(filepath)
+                    # Smart Extraction
+                    doc_full = process_document_full(filepath)
+                    raw_text = doc_full['raw_text']
                     cleaned_text = clean_text(raw_text)
                     nlp_text = cleaned_text[:500000] if len(cleaned_text) > 500000 else cleaned_text
                     
@@ -2065,10 +2119,11 @@ def create_app():
                     
                     # Metadata for Cloud 
                     doc_metadata = {
-                        "title": title_from_filename,
-                        "abstract": raw_text[:500] if raw_text else "",
+                        "title": doc_full['title'],
+                        "abstract": doc_full['abstract'],
                         "file_size_bytes": file_size,
                         "institution_id": inst_id,
+                        "publication_date": f"{doc_full['year']}-01-01" if doc_full.get('year') else None,
                         "status": "approved", # Admin uploads bypass pending queue
                         "file_path": storage_path 
                     }
@@ -2092,27 +2147,31 @@ def create_app():
                             # Use current year for bulk uploads if no year extraction logic is present
                             # To be perfectly robust, we extract year if available, else use current
                             from datetime import datetime
-                            es.index(index=INDEX_NAME, id=new_doc_id, body={
-                                "title": title_from_filename,
-                                "abstract": raw_text[:500] if raw_text else "",
-                                "full_text": raw_text[:5000] if raw_text else "", # Limit to prevent ES bloat
+                            es.index(index=INDEX_NAME, id=str(new_doc_id), document={
+                                "title": doc_full['title'],
+                                "abstract": doc_full['abstract'],
+                                "full_text": cleaned_text[:50000] if cleaned_text else "", # Limit to prevent ES bloat
+                                "keywords": keywords,
+                                "topics": topics,
                                 "institution_id": inst_id,
                                 "institution_name": inst_name if 'inst_name' in locals() else "Unknown",
-                                "year": datetime.utcnow().year,
-                                "authors": []
+                                "year": doc_full['year'],
+                                "authors": doc_full['authors'],
+                                "upload_date": datetime.utcnow().isoformat(),
+                                "is_institutional": True,
+                                "status": "approved"
                             })
                         except Exception as es_err:
                             print(f"ES Indexing failed for {filename}: {es_err}")
                     
                     # Local DB Mirror
-                    
-                    # Local DB Mirror
                     try:
                         new_doc = Document(
                             id=new_doc_id,
-                            title=title_from_filename,
-                            abstract=raw_text[:500] if raw_text else "",
+                            title=doc_full['title'],
+                            abstract=doc_full['abstract'],
                             file_size_bytes=file_size,
+                            publication_date=datetime(doc_full['year'], 1, 1) if doc_full.get('year') else None,
                             institution_id=inst_id,
                             uploader_id=request.user_id,
                             is_institutional=True,
@@ -2121,32 +2180,22 @@ def create_app():
                         )
                         db.session.add(new_doc)
                         db.session.commit()
+                        
+                        # Sync Authors
+                        if doc_full['authors']:
+                            sync_authors_to_doc(new_doc_id, doc_full['authors'])
                     except Exception as e:
                         db.session.rollback()
                         print(f"Local DB sync warning during bulk upload: {e}")
-                    
-                    # Elasticsearch Sync
-                    if 'es' in globals() and es and es.ping():
-                        es.index(index=INDEX_NAME, id=str(new_doc_id), document={
-                            "title": title_from_filename,
-                            "abstract": raw_text[:500] if raw_text else "",
-                            "full_text": cleaned_text,
-                            "keywords": keywords,
-                            "topics": topics,
-                            "upload_date": datetime.utcnow().isoformat(),
-                            "institution_id": inst_id,
-                            "is_institutional": True,
-                            "status": "approved"
-                        })
                     
                     uploaded_count += 1
                 except Exception as e:
                     errors.append({"file": file.filename, "error": str(e)})
                     print(f"Bulk Upload Error [{file.filename}]: {str(e)}")
-                finally:
-                    if filepath and os.path.exists(filepath):
-                        try: os.remove(filepath)
-                        except: pass
+                # finally:
+                #     if filepath and os.path.exists(filepath):
+                #         try: os.remove(filepath)
+                #         except: pass
                         
         return jsonify({
             "message": f"Successfully processed {uploaded_count} files.",

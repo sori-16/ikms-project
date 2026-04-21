@@ -33,6 +33,8 @@ function ResearcherDashboard() {
     const [institutions, setInstitutions] = useState([]);
     const [selectedInst, setSelectedInst] = useState('');
     const [verificationLoading, setVerificationLoading] = useState(false);
+    const [notifications, setNotifications] = useState([]);
+    const [showNotifications, setShowNotifications] = useState(false);
     const fileInputRef = useRef(null);
     const navigate = useNavigate();
 
@@ -45,8 +47,23 @@ function ResearcherDashboard() {
         fetchRealTimeAlerts();
         fetchStats();
         fetchCollabInterests();
+        fetchNotifications();
         if (!currentUser.is_verified) fetchInstitutions();
     }, [navigate]);
+
+    const fetchNotifications = async () => {
+        try {
+            const res = await axios.get(`${API}/notifications`, { headers: getAuthHeaders() });
+            setNotifications(res.data);
+        } catch {} 
+    };
+
+    const markNotifRead = async (id) => {
+        try {
+            await axios.put(`${API}/notifications/${id}/read`, {}, { headers: getAuthHeaders() });
+            setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+        } catch {}
+    };
 
     const fetchInstitutions = async () => {
         try {
@@ -59,16 +76,9 @@ function ResearcherDashboard() {
         e.preventDefault();
         setVerificationLoading(true);
         try {
-            // For Independent, we send a special flag or null. Let's assume the backend 
-            // treats a missing/null institution_id as an Independent request. 
-            // Or we just send independent flag if we implement it.
-            // For now, let's just use the existing affiliation request endpoint for institutions
-            if (selectedInst === 'independent') {
-                setMessage('info:Independent Publishing requests are currently being rolled out. Please contact IKMS support to expedite your independent review.');
-                setShowVerificationModal(false);
-            } else if (selectedInst) {
+            if (selectedInst) {
                 await axios.post(`${API}/institution/request-affiliation`, { institution_id: selectedInst }, { headers: getAuthHeaders() });
-                setMessage('success:Affiliation request submitted! Awaiting University Admin approval.');
+                setMessage('success:Publishing request submitted! Awaiting administrator approval.');
                 setShowVerificationModal(false);
             } else {
                 setMessage('error:Please select a publishing option.');
@@ -290,11 +300,63 @@ function ResearcherDashboard() {
                         <p className="dash-subtitle" style={{ margin: 0 }}>Welcome back, {user.name}! <span style={{ opacity: 0.6, fontSize: '0.85rem' }}>— የተመራማሪ ዳሽቦርድ</span></p>
                     </div>
                     <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                        {!user.is_verified && (
-                            <button className="btn btn-primary" onClick={() => setShowVerificationModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <ShieldCheck size={16} /> Request to Publish
+                        {/* Notification Bell */}
+                        <div style={{ position: 'relative' }}>
+                            <button 
+                                onClick={() => setShowNotifications(v => !v)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', position: 'relative', padding: '6px' }}
+                                title="Notifications"
+                            >
+                                <Bell size={22} color="var(--text-muted)" />
+                                {notifications.filter(n => !n.read).length > 0 && (
+                                    <span style={{
+                                        position: 'absolute', top: 0, right: 0,
+                                        background: '#ef4444', color: '#fff',
+                                        borderRadius: '99px', fontSize: '0.65rem',
+                                        fontWeight: 700, minWidth: 16, height: 16,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        padding: '0 4px'
+                                    }}>
+                                        {notifications.filter(n => !n.read).length}
+                                    </span>
+                                )}
                             </button>
-                        )}
+                            {showNotifications && (
+                                <div style={{
+                                    position: 'absolute', right: 0, top: '110%', zIndex: 1000,
+                                    width: 340, background: '#fff',
+                                    borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+                                    border: '1px solid #e2e8f0', overflow: 'hidden'
+                                }}>
+                                    <div style={{ padding: '0.85rem 1.2rem', borderBottom: '1px solid #f1f5f9', fontWeight: 700, fontSize: '0.9rem', color: '#0f172a', display: 'flex', justifyContent: 'space-between' }}>
+                                        <span>Notifications</span>
+                                        <button onClick={() => setShowNotifications(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} /></button>
+                                    </div>
+                                    <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                                        {notifications.length === 0 && (
+                                            <p style={{ textAlign: 'center', color: '#94a3b8', padding: '1.5rem', margin: 0 }}>No notifications yet.</p>
+                                        )}
+                                        {notifications.map(n => (
+                                            <div 
+                                                key={n.id}
+                                                onClick={() => markNotifRead(n.id)}
+                                                style={{
+                                                    padding: '0.85rem 1.2rem',
+                                                    borderBottom: '1px solid #f1f5f9',
+                                                    background: n.read ? '#fff' : '#f0f9ff',
+                                                    cursor: 'pointer',
+                                                    borderLeft: `3px solid ${n.type === 'success' ? '#22c55e' : n.type === 'error' ? '#ef4444' : '#3b82f6'}`,
+                                                    transition: 'background 0.2s'
+                                                }}
+                                            >
+                                                <p style={{ margin: 0, fontSize: '0.85rem', color: '#0f172a', lineHeight: 1.5 }}>{n.message}</p>
+                                                <p style={{ margin: '0.35rem 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>{new Date(n.created_at).toLocaleString()}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         <button onClick={logout} className="btn btn-ghost btn-sm">Logout</button>
                     </div>
                 </div>
