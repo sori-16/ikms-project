@@ -112,10 +112,8 @@ class Document(db.Model):
     approved_at = db.Column(db.DateTime)
     approved_by = db.Column(db.String(255), db.ForeignKey('users.id'))
     
-    # Ecosystem Phase: Ethics & Data
-    erb_status = db.Column(db.String(50), default='none') # 'none', 'submitted', 'verified'
-    erb_letter_path = db.Column(db.String(255), nullable=True)
-    dataset_path = db.Column(db.String(255), nullable=True)
+    # Metadata
+    author_names = db.Column(db.Text) # Comma-separated string for quick display (denormalization)
     
     institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'))
     uploader_id = db.Column(db.String(255), db.ForeignKey('users.id'))

@@ -466,10 +466,10 @@ function SearchPage() {
                                             <p className="result-abstract">{doc.abstract?.substring(0, 200)}{doc.abstract?.length > 200 ? '...' : ''}</p>
 
                                             <div className="result-meta">
-                                                {doc.upload_date && (
+                                                {(doc.publication_date || doc.upload_date) && (
                                                     <span className="meta-item">
                                                         <Calendar size={13} />
-                                                        {new Date(doc.upload_date).getFullYear()}
+                                                        {new Date(doc.publication_date || doc.upload_date).getFullYear()}
                                                     </span>
                                                 )}
                                                 {doc.institution_id && (
@@ -484,17 +484,11 @@ function SearchPage() {
                                                         {doc.download_count} downloads
                                                     </span>
                                                 )}
-                                                {doc.authors?.map(auth => (
-                                                    <Link
-                                                        key={auth.id}
-                                                        to={`/author/${auth.id}`}
-                                                        className="chip"
-                                                        style={{ fontSize: '0.75rem', padding: '0.15rem 0.6rem' }}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        👤 {auth.name}
-                                                    </Link>
-                                                ))}
+                                                {doc.author_names && (
+                                                    <span className="meta-item" title={doc.author_names}>
+                                                        👤 {doc.author_names.length > 50 ? doc.author_names.substring(0, 50) + '...' : doc.author_names}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="result-card-actions">

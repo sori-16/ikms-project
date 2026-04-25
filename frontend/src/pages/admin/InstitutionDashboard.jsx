@@ -4,7 +4,7 @@ import axios from 'axios';
 import {
     Home, FileText, CheckSquare, Users, Building2, BarChart2, Settings,
     LogOut, Search, Bell, UploadCloud, ChevronRight, TrendingUp, TrendingDown,
-    MoreVertical, CheckCircle, XCircle, ArrowLeft, Download, Shield, Eye
+    MoreVertical, CheckCircle, XCircle, ArrowLeft, Download, Shield, Eye, AlertCircle
 } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { getUser, logout, getAuthHeaders } from '../../utils/auth';
@@ -183,7 +183,7 @@ function InstitutionDashboard() {
                             </div>
                             {t.badge > 0 && (
                                 <span style={{ background: '#22c55e', color: '#fff', fontSize: '0.7rem', fontWeight: 700, padding: '2px 6px', borderRadius: 99 }}>
-                                    {t.badge}
+                                    {t.badge || 0}
                                 </span>
                             )}
                         </button>
@@ -219,7 +219,7 @@ function InstitutionDashboard() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                 <div style={{ position: 'relative', cursor: 'pointer' }}>
                     <Bell size={20} color="#64748b" />
-                    {(pendingDocs.length > 0 || affReqs.length > 0) && <span style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, background: '#ef4444', borderRadius: '50%' }} />}
+                    {((pendingDocs && pendingDocs.length > 0) || (affReqs && affReqs.length > 0)) && <span style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, background: '#ef4444', borderRadius: '50%' }} />}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <div style={{ textAlign: 'right' }}>
@@ -356,7 +356,7 @@ function InstitutionDashboard() {
                         {affReqs.map(req => (
                             <tr key={'aff-'+req.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                 <td style={{ padding: '1rem 1.5rem', fontSize: '0.9rem', fontWeight: 600, color: '#0f172a' }}>{req.user_name} <br/><span style={{ fontSize:'0.8rem', fontWeight: 400, color: '#64748b' }}>{req.user_email}</span></td>
-                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem' }}><User size={14} style={{ marginRight: 4, verticalAlign: -2 }}/> Joining Request</td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem' }}><Users size={14} style={{ marginRight: 4, verticalAlign: -2 }}/> Joining Request</td>
                                 <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{new Date(req.created_at).toLocaleDateString()}</td>
                                 <td style={{ padding: '1rem 1.5rem' }}><StatusBadge status="pending" /></td>
                                 <td style={{ padding: '1rem 1.5rem', textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
@@ -378,7 +378,7 @@ function InstitutionDashboard() {
                                 </td>
                             </tr>
                         ))}
-                        {(affReqs.length === 0 && pendingDocs.length === 0) && (
+                        {(!affReqs || !pendingDocs || (affReqs.length === 0 && pendingDocs.length === 0)) && (
                             <tr><td colSpan="5" style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>No pending verifications. You are all caught up!</td></tr>
                         )}
                     </tbody>

@@ -82,18 +82,19 @@ def sync_all_to_es():
                     cloud_update = {
                         "title": doc_full['title'],
                         "abstract": doc_full['abstract'],
+                        "author_names": ', '.join(doc_full['authors']) if doc_full.get('authors') else ""
                     }
                     if doc_full.get('year'):
                         cloud_update["publication_date"] = f"{doc_full['year']}-01-01"
                     try:
                         supabase.table("documents").update(cloud_update).eq("id", doc.id).execute()
-                        print(f"  ☁️ Supabase Cloud updated for ID {doc.id}")
+                        print(f"  CLOUD: Supabase Cloud updated for ID {doc.id}")
                     except Exception as cloud_err:
-                        print(f"  ⚠️ Supabase update failed for ID {doc.id}: {cloud_err}")
+                        print(f"  WARNING: Supabase update failed for ID {doc.id}: {cloud_err}")
                     
                     # Sync authors to local DB
                     if doc_full['authors']:
-                        print(f"  📝 Syncing authors: {', '.join(doc_full['authors'])}")
+                        print(f"  LOG: Syncing authors: {', '.join(doc_full['authors'])}")
                         sync_authors_to_doc(doc.id, doc_full['authors'])
                         
                         # Also push authors to Supabase Cloud
@@ -132,7 +133,7 @@ def sync_all_to_es():
                         "year": doc_full['year'],
                         "authors": doc_full['authors']
                     }
-                    print(f"  ✨ Repaired & Indexed: {doc_full['title']}")
+                    print(f"  SUCCESS: Repaired & Indexed: {doc_full['title']}")
                 else:
                     print(f"  ⚠️ Warning: No PDF source available for ID {doc.id}. Using existing DB metadata.")
                     # Fallback to what we have in DB
@@ -148,15 +149,20 @@ def sync_all_to_es():
                         "year": doc.publication_date.year if doc.publication_date else (doc.upload_date.year if doc.upload_date else 2026),
                         "authors": [a.name for a in doc.authors] if doc.authors else []
                     }
-                    print(f"  ✅ Indexed existing metadata for: {doc.title}")
+                    print(f"  Indexed existing metadata for: {doc.title}")
                 
                 es.index(index=INDEX_NAME, id=str(doc.id), document=doc_body)
                 
             except Exception as e:
                 db.session.rollback()
-                print(f"❌ Error indexing/repairing {doc.title}: {e}")
+                print(f"  ERROR: Error indexing/repairing {doc.title}: {e}")
 
     print("Done! All documents synchronized to Elasticsearch.")
 
 if __name__ == "__main__":
+    import sys
+    if sys.platform == "win32":
+        # Force UTF-8 for Windows terminal to avoid UnicodeEncodeErrors with special characters
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sync_all_to_es()

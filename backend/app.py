@@ -441,6 +441,16 @@ def create_app():
             new_view_count = (doc.get('view_count') or 0) + 1
             supabase.table("documents").update({"view_count": new_view_count}).eq("id", doc_id).execute()
             
+            # 3. Fetch Authors from Cloud join table
+            authors = []
+            try:
+                auth_res = supabase.table("document_authors").select("authors(id, name)").eq("document_id", doc_id).execute()
+                for entry in (auth_res.data or []):
+                    if entry.get('authors'):
+                        authors.append(entry['authors'])
+            except Exception as e:
+                print(f"DEBUG: Could not fetch authors for doc {doc_id}: {e}")
+
             return jsonify({
                 "id": doc['id'],
                 "title": doc['title'],
@@ -451,7 +461,7 @@ def create_app():
                 "view_count": new_view_count,
                 "institution": doc['institutions']['name'] if doc.get('institutions') else "Unknown institution",
                 "institutional_status": doc.get('institutional_status', 'pending'),
-                "authors": []  # Authors join handled separately if needed
+                "authors": authors
             }), 200
         except Exception as e:
             print(f"Error fetching document {doc_id}: {e}")
@@ -874,6 +884,9 @@ def create_app():
             inst_id = user_res.data[0]['institution_id']
             return get_institution_analytics(inst_id)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"DEBUG: get_my_institution_analytics_route error: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/pending', methods=['GET'])
@@ -890,7 +903,7 @@ def create_app():
             
             pending_docs_res = supabase.table("documents").select(
                 "id, title, abstract, upload_date, uploader_id"
-            ).eq("institution_id", inst_id).eq("status", "pending").eq("is_institutional", True).execute()
+            ).eq("institution_id", inst_id).eq("status", "pending").execute()
             
             results = [{
                 "id": d['id'],
@@ -902,6 +915,9 @@ def create_app():
             
             return jsonify(results), 200
         except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"DEBUG: get_my_institution_pending error: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/logo', methods=['POST'])
@@ -1011,6 +1027,9 @@ def create_app():
             ).eq("institution_id", inst_id).order("upload_date", desc=True).execute()
             return jsonify(docs_res.data or []), 200
         except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"DEBUG: get_my_institution_documents error: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/members', methods=['GET'])
@@ -1028,6 +1047,9 @@ def create_app():
             ).eq("institution_id", inst_id).execute()
             return jsonify(members_res.data or []), 200
         except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"DEBUG: get_my_institution_members error: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/affiliation-requests', methods=['GET'])
@@ -1067,7 +1089,9 @@ def create_app():
                 })
             return jsonify(results), 200
         except Exception as e:
-            print(f"Affiliation requests error: {e}")
+            import traceback
+            traceback.print_exc()
+            print(f"DEBUG: get_my_institution_affiliation_requests error: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/affiliation-requests/<req_id>/approve', methods=['POST'])
@@ -1080,19 +1104,25 @@ def create_app():
             if not user_res.data or not user_res.data[0].get('institution_id'):
                 return jsonify({"error": "No institution associated"}), 404
             inst_id = user_res.data[0]['institution_id']
-            req_res = supabase.table("affiliation_requests").select("*").eq("id", req_id).eq("institution_id", inst_id).execute()
-            if not req_res.data:
+            from models import AffiliationRequest
+            req = AffiliationRequest.query.filter_by(id=req_id, institution_id=inst_id).first()
+            if not req:
                 return jsonify({"error": "Request not found or not for your institution"}), 404
-            req = req_res.data[0]
             # Approve: mark request approved, set user institution + verified
-            supabase.table("affiliation_requests").update({"status": "approved"}).eq("id", req_id).execute()
+            req.status = 'approved'
+            db.session.commit()
+            
+            # Update user in Cloud (since users live in Cloud)
             supabase.table("users").update({
                 "institution_id": inst_id,
                 "is_verified": True,
                 "role": "researcher"
-            }).eq("id", req['user_id']).execute()
+            }).eq("id", req.user_id).execute()
             return jsonify({"message": "Researcher approved and linked to institution"}), 200
         except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"DEBUG: approve_my_affiliation_request error: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/affiliation-requests/<req_id>/reject', methods=['POST'])
@@ -1101,7 +1131,11 @@ def create_app():
     def reject_my_affiliation_request(req_id):
         """Reject an affiliation request"""
         try:
-            supabase.table("affiliation_requests").update({"status": "rejected"}).eq("id", req_id).execute()
+            from models import AffiliationRequest
+            req = AffiliationRequest.query.get(req_id)
+            if req:
+                req.status = 'rejected'
+                db.session.commit()
             return jsonify({"message": "Request rejected"}), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -1213,7 +1247,8 @@ def create_app():
                 return jsonify([{
                     "source": "elasticsearch",
                     "id": hit['_id'],
-                    **hit['_source']
+                    **hit['_source'],
+                    "author_names": ', '.join(hit['_source'].get('authors', [])) if isinstance(hit['_source'].get('authors'), list) else hit['_source'].get('authors', "")
                 } for hit in hits])
             except Exception as e:
                 print(f"ES Search failed: {e}. Falling back to Cloud.")
@@ -2121,6 +2156,7 @@ def create_app():
                     doc_metadata = {
                         "title": doc_full['title'],
                         "abstract": doc_full['abstract'],
+                        "author_names": ', '.join(doc_full['authors']) if doc_full.get('authors') else "",
                         "file_size_bytes": file_size,
                         "institution_id": inst_id,
                         "publication_date": f"{doc_full['year']}-01-01" if doc_full.get('year') else None,

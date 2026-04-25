@@ -49,7 +49,8 @@ const DocumentDetail = () => {
 
     const generateCitations = (docData) => {
         if (!docData) return;
-        const year = docData.upload_date ? new Date(docData.upload_date).getFullYear() : 'n.d.';
+        const displayDate = docData.publication_date || docData.upload_date;
+        const year = displayDate ? new Date(displayDate).getFullYear() : 'n.d.';
         const authors = docData.authors?.map(a => a.name).join(', ') || 'Unknown Author';
         const { title } = docData;
         const institution = docData.institution || 'IKMS';
@@ -201,7 +202,7 @@ const DocumentDetail = () => {
                             </span>
                         )}
                         <span className="badge badge-primary" style={{ fontSize: '0.82rem', padding: '0.35rem 1rem' }}>
-                            <Calendar size={13} /> {new Date(doc.upload_date).getFullYear()}
+                            <Calendar size={13} /> {new Date(doc.publication_date || doc.upload_date).getFullYear()}
                         </span>
                     </div>
 
@@ -238,7 +239,7 @@ const DocumentDetail = () => {
                             <span className="doc-metric-label">Endorsements</span>
                         </div>
                         <div className="doc-metric">
-                            <span className="doc-metric-value">{new Date(doc.upload_date).getFullYear()}</span>
+                            <span className="doc-metric-value">{new Date(doc.publication_date || doc.upload_date).getFullYear()}</span>
                             <span className="doc-metric-label">Year</span>
                         </div>
                     </div>
@@ -321,30 +322,6 @@ const DocumentDetail = () => {
                             <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
                                 {doc.topic_scores.slice(0, 8).map((ts, i) => (
                                     <span key={i} className="chip chip-active">{ts.topic}</span>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Citations */}
-                    {citations && (
-                        <div className="doc-section">
-                            <h2 className="doc-section-title">Cite This Research</h2>
-                            <div className="citations-grid">
-                                {['apa', 'mla', 'bibtex'].map((fmt) => (
-                                    <div key={fmt} className="citation-card">
-                                        <div className="citation-header">
-                                            <span className="citation-format">{fmt.toUpperCase()}</span>
-                                            <button
-                                                className="btn btn-ghost btn-sm"
-                                                onClick={() => copyToClipboard(citations[fmt], fmt)}
-                                            >
-                                                {copiedFormat === fmt ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
-                                                {copiedFormat === fmt ? 'Copied!' : 'Copy'}
-                                            </button>
-                                        </div>
-                                        <code className="citation-text">{citations[fmt]}</code>
-                                    </div>
                                 ))}
                             </div>
                         </div>
