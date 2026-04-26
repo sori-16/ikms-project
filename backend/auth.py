@@ -4,9 +4,27 @@ from supabase_client import supabase
 import os
 
 def login_required(f):
-    """Decorator to require Supabase authentication"""
+    """Decorator to require Supabase authentication (Bypassed in OFFLINE_MODE)"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        if os.environ.get('OFFLINE_MODE') == 'true':
+            # Mock user for demo
+            token = request.headers.get('Authorization', '')
+            user_id = token[7:] if token.startswith('Bearer ') else token
+            
+            # Look up in local DB
+            from models import User
+            user = User.query.get(user_id)
+            if user:
+                request.user_id = user.id
+                request.user_email = user.email
+                request.user_role = user.role.value if hasattr(user.role, 'value') else str(user.role)
+            else:
+                request.user_id = user_id or "demo-user-id"
+                request.user_email = "demo@example.com"
+                request.user_role = "sys_admin"
+            return f(*args, **kwargs)
+
         token = request.headers.get('Authorization')
         if not token:
             return jsonify({"error": "No token provided"}), 401
@@ -56,10 +74,30 @@ def login_required(f):
     return decorated_function
 
 def role_required(*allowed_roles):
-    """Decorator to require specific roles via Supabase Auth"""
+    """Decorator to require specific roles (Bypassed in OFFLINE_MODE)"""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
+            if os.environ.get('OFFLINE_MODE') == 'true':
+                token = request.headers.get('Authorization', '')
+                user_id = token[7:] if token.startswith('Bearer ') else token
+                
+                from models import User
+                user = User.query.get(user_id)
+                role = "sys_admin"
+                if user:
+                    role = user.role.value if hasattr(user.role, 'value') else str(user.role)
+                
+                if role not in allowed_roles and "sys_admin" not in allowed_roles:
+                     # Allow sys_admin to bypass role checks in demo if we want, 
+                     # but let's be strict to allow testing
+                     if role not in allowed_roles:
+                        return jsonify({"error": f"Insufficient permissions: {role}"}), 403
+
+                request.user_id = user_id or "demo-user-id"
+                request.user_role = role
+                return f(*args, **kwargs)
+
             token = request.headers.get('Authorization')
             if not token:
                 return jsonify({"error": "No token provided"}), 401

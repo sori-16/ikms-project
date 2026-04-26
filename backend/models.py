@@ -22,7 +22,6 @@ class UserRole(enum.Enum):
     PUBLIC = 'public'
     RESEARCHER = 'researcher'
     INST_ADMIN = 'inst_admin'
-    MODERATOR = 'moderator'
     SYS_ADMIN = 'sys_admin'
 
 class DocumentStatus(enum.Enum):
@@ -49,6 +48,13 @@ class User(db.Model):
     role = db.Column(db.Enum(UserRole), nullable=False, default=UserRole.RESEARCHER)
     institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'))
     is_verified = db.Column(db.Boolean, default=False)
+    
+    # Scholar Profile Fields
+    date_of_birth = db.Column(db.Date, nullable=True) # Kept private
+    occupation = db.Column(db.String(100), nullable=True)
+    photo_url = db.Column(db.String(255), nullable=True)
+    research_interests = db.Column(db.Text, nullable=True)
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Relationship to Institution
@@ -117,7 +123,7 @@ class Document(db.Model):
     
     institution_id = db.Column(db.Integer, db.ForeignKey('institutions.id'))
     uploader_id = db.Column(db.String(255), db.ForeignKey('users.id'))
-    is_institutional = db.Column(db.Boolean, default=False)
+    is_external_match = db.Column(db.Boolean, default=False) # Flagged if verified by PubMed/Scopus
     
     authors = db.relationship('Author', secondary=document_authors, lazy='subquery',
         backref=db.backref('documents', lazy=True))
@@ -173,7 +179,7 @@ class ModerationLog(db.Model):
     __tablename__ = 'moderation_logs'
     id = db.Column(db.Integer, primary_key=True)
     document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
-    moderator_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
+    admin_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
     action = db.Column(db.String(50)) # 'approved', 'rejected', 'revision'
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

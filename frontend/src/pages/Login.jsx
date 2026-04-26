@@ -83,6 +83,27 @@ function Login() {
                     <button type="submit" className="btn btn-primary w-full" style={{ marginTop: '0.5rem' }} disabled={loading}>
                         {loading ? 'Signing in...' : <><ArrowRight size={17} /> Sign In</>}
                     </button>
+                    
+                    <button 
+                        type="button" 
+                        className="btn btn-ghost w-full" 
+                        style={{ marginTop: '0.75rem', fontSize: '0.8rem', border: '1px dashed var(--border)' }}
+                        onClick={async () => {
+                            setLoading(true);
+                            try {
+                                const res = await axios.post(`${API}/auth/demo-login`, { email: email || 'demo@example.com' });
+                                setToken(res.data.access_token);
+                                setUser(res.data.user);
+                                navigate('/master-admin');
+                            } catch (err) {
+                                setError("Offline Demo Mode not enabled in backend .env");
+                            } finally {
+                                setLoading(false);
+                            }
+                        }}
+                    >
+                        Demo: Login Offline
+                    </button>
                 </form>
 
                 <div className="auth-divider"><span>Don't have an account?</span></div>

@@ -122,6 +122,47 @@ def create_app():
         return "IKMS Backend is running!"
 
     # ========== AUTH ENDPOINTS ==========
+    # Route to serve PDF files locally in offline mode
+    @app.route('/static/uploads/<path:filename>')
+    def serve_pdf(filename):
+        from flask import send_from_directory
+        return send_from_directory(os.path.join(app.root_path, 'static', 'uploads'), filename)
+
+    @app.route('/auth/demo-login', methods=['POST'])
+    def demo_login():
+        """Bypass Supabase for offline demo"""
+        if os.environ.get('OFFLINE_MODE') != 'true':
+            return jsonify({"error": "Demo login only available in OFFLINE_MODE"}), 403
+        
+        data = request.json
+        email = data.get('email')
+        
+        # Look up user in local DB
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            # Create a mock user if not exists
+            user = User(
+                id="demo-admin-id",
+                email=email,
+                name="Demo Admin",
+                role="sys_admin",
+                is_verified=True
+            )
+            db.session.add(user)
+            db.session.commit()
+        
+        # Return the user ID as the token
+        role_str = user.role.value if hasattr(user.role, 'value') else str(user.role)
+        return jsonify({
+            "access_token": user.id,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "role": role_str
+            }
+        })
+
     @app.route('/register', methods=['POST'])
     def register():
         data = request.get_json()
@@ -231,6 +272,85 @@ def create_app():
         except Exception as e:
             return jsonify({"error": "Invalid email or password"}), 401
 
+    @app.route('/profile/setup', methods=['POST'])
+    @login_required
+    def setup_profile():
+        """Setup Scholar Profile and Request Affiliation"""
+        try:
+            data = request.form
+            dob = data.get('date_of_birth')
+            occupation = data.get('occupation')
+            interests = data.get('research_interests')
+            institution_id = data.get('institution_id')
+            
+            user = User.query.get(request.user_id)
+            if not user:
+                return jsonify({"error": "User not found locally"}), 404
+                
+            photo_url = None
+            if 'photo' in request.files:
+                photo_file = request.files['photo']
+                if photo_file and photo_file.filename != '':
+                    ext = photo_file.filename.rsplit('.', 1)[-1].lower() if '.' in photo_file.filename else 'png'
+                    storage_path = f"profiles/{request.user_id}.{ext}"
+                    file_bytes = photo_file.read()
+                    
+                    from supabase import create_client, ClientOptions
+                    token = request.headers.get('Authorization')
+                    auth_supabase = create_client(
+                        os.environ.get('SUPABASE_URL'), 
+                        os.environ.get('SUPABASE_KEY'), 
+                        options=ClientOptions(headers={'Authorization': token})
+                    ) if token else supabase
+                    
+                    # Upload to Supabase Storage
+                    auth_supabase.storage.from_('research-papers').upload(
+                        storage_path, file_bytes,
+                        {"content-type": photo_file.content_type, "upsert": "true"}
+                    )
+                    url_res = auth_supabase.storage.from_('research-papers').get_public_url(storage_path)
+                    photo_url = url_res if isinstance(url_res, str) else url_res.get("publicUrl", "")
+            
+            # Update local DB
+            if dob:
+                from datetime import datetime
+                user.date_of_birth = datetime.strptime(dob, "%Y-%m-%d").date()
+            if occupation:
+                user.occupation = occupation
+            if interests:
+                user.research_interests = interests
+            if photo_url:
+                user.photo_url = photo_url
+            
+            # Update cloud DB
+            cloud_update = {}
+            if occupation: cloud_update['occupation'] = occupation
+            if photo_url: cloud_update['photo_url'] = photo_url
+            # Not sending DOB to cloud unless column exists, but let's assume it doesn't yet or we sync it
+            
+            if cloud_update:
+                supabase.table("users").update(cloud_update).eq("id", request.user_id).execute()
+                
+            # Handle Affiliation Request
+            if institution_id:
+                from models import AffiliationRequest
+                existing_req = AffiliationRequest.query.filter_by(user_id=request.user_id, status='pending').first()
+                if not existing_req:
+                    new_req = AffiliationRequest(
+                        user_id=request.user_id,
+                        institution_id=int(institution_id),
+                        status='pending'
+                    )
+                    db.session.add(new_req)
+            
+            db.session.commit()
+            return jsonify({"message": "Profile updated successfully", "photo_url": photo_url}), 200
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/upload', methods=['POST'])
     @login_required
     def upload_file():
@@ -259,64 +379,85 @@ def create_app():
                 keywords = extract_keywords(nlp_text)
                 topics = assign_topics(nlp_text)
                 
-                # 4. Check User Verification & Set Routing
+                # 4. Enforce Institutional Publishing
                 user_res_data = supabase.table("users").select("*").eq("id", request.user_id).execute()
                 user_data = user_res_data.data[0] if user_res_data.data else None
-                want_institutional = request.form.get('is_institutional') == 'true'
                 
-                # Default to Independent if not verified or if they chose Independent
-                final_is_institutional = False
-                final_inst_id = None
+                if not user_data or not user_data.get('is_verified') or not user_data.get('institution_id'):
+                    return jsonify({"error": "You must be affiliated with an institution to publish."}), 403
+                    
+                final_inst_id = user_data.get('institution_id')
                 
-                if want_institutional and user_data and user_data.get('is_verified'):
-                    final_is_institutional = True
-                    final_inst_id = user_data.get('institution_id')
+                # 4b. External Verification Check (CrossRef)
+                is_external_match = False
+                try:
+                    import urllib.request, urllib.parse, json as json_lib
+                    query_title = urllib.parse.quote(doc_full['title'])
+                    url = f"https://api.crossref.org/works?query.title={query_title}&rows=1"
+                    with urllib.request.urlopen(url, timeout=5) as resp:
+                        data = json_lib.loads(resp.read())['message']
+                        if data.get('items'):
+                            # Basic fuzzy match or just checking if anything comes back
+                            # A real system would use a smarter similarity score
+                            is_external_match = True
+                except Exception as ex:
+                    print(f"CrossRef check failed: {ex}")
                 
-                # 5. Save to Supabase Cloud (REST) with user's Auth context
+                # 5. Save to Supabase Cloud or Local
                 file_size = os.path.getsize(filepath)
+                is_offline = os.environ.get('OFFLINE_MODE') == 'true'
                 
-                doc_metadata = {
-                    "title": doc_full['title'],
-                    "abstract": doc_full['abstract'],
-                    "file_size_bytes": file_size,
-                    "publication_date": f"{doc_full['year']}-01-01" if doc_full.get('year') else None,
-                    "institution_id": final_inst_id,
-                    "status": "pending",
-                    "file_path": f"pending/{filename}" # Placeholder
-                }
-                
-                # Fetch user's token to bypass Storage RLS
-                from supabase import create_client, ClientOptions
-                token = request.headers.get('Authorization')
-                auth_supabase = create_client(
-                    os.environ.get('SUPABASE_URL'), 
-                    os.environ.get('SUPABASE_KEY'), 
-                    options=ClientOptions(headers={'Authorization': token})
-                ) if token else supabase
-                
-                # Insert metadata to cloud
-                res = auth_supabase.table("documents").insert(doc_metadata).execute()
-                if not res.data:
-                    raise Exception(f"Cloud insert failed: {res}")
-                
-                new_doc_id = res.data[0]['id']
-                
-                # Fetch institution name for folder structure
-                inst_folder = "Independent"
-                if final_is_institutional and final_inst_id:
-                    inst_res = auth_supabase.table("institutions").select("name").eq("id", final_inst_id).execute()
-                    if inst_res.data:
-                        inst_folder = inst_res.data[0]['name'].replace("/", "-").replace("\\", "-").strip()
-                
-                # 6. Upload PDF to Supabase Storage
-                storage_path = f"{inst_folder}/{new_doc_id}_{filename}"
-                with open(filepath, 'rb') as f:
-                    file_data = f.read()
-                
-                auth_supabase.storage.from_(STORAGE_BUCKET).upload(storage_path, file_data, {"content-type": "application/pdf"})
-                
-                # 7. Update metadata with actual path
-                auth_supabase.table("documents").update({"file_path": storage_path}).eq("id", new_doc_id).execute()
+                new_doc_id = None
+                storage_path = None
+
+                if is_offline:
+                    # Mock ID for local demo
+                    import random
+                    new_doc_id = random.randint(10000, 99999)
+                    storage_path = filename
+                    # Copy to static/uploads
+                    upload_dir = os.path.join(app.root_path, 'static', 'uploads')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    import shutil
+                    shutil.copy(filepath, os.path.join(upload_dir, filename))
+                else:
+                    doc_metadata = {
+                        "title": doc_full['title'],
+                        "abstract": doc_full['abstract'],
+                        "file_size_bytes": file_size,
+                        "publication_date": f"{doc_full['year']}-01-01" if doc_full.get('year') else None,
+                        "institution_id": final_inst_id,
+                        "status": "pending",
+                        "file_path": f"pending/{filename}", # Placeholder
+                        "is_external_match": is_external_match
+                    }
+                    
+                    from supabase import create_client, ClientOptions
+                    token = request.headers.get('Authorization')
+                    auth_supabase = create_client(
+                        os.environ.get('SUPABASE_URL'), 
+                        os.environ.get('SUPABASE_KEY'), 
+                        options=ClientOptions(headers={'Authorization': token})
+                    ) if token else supabase
+                    
+                    res = auth_supabase.table("documents").insert(doc_metadata).execute()
+                    if not res.data:
+                        raise Exception(f"Cloud insert failed: {res}")
+                    
+                    new_doc_id = res.data[0]['id']
+                    
+                    inst_folder = "Independent"
+                    if final_inst_id:
+                        inst_res = auth_supabase.table("institutions").select("name").eq("id", final_inst_id).execute()
+                        if inst_res.data:
+                            inst_folder = inst_res.data[0]['name'].replace("/", "-").replace("\\", "-").strip()
+                    
+                    storage_path = f"{inst_folder}/{new_doc_id}_{filename}"
+                    with open(filepath, 'rb') as f:
+                        file_data = f.read()
+                    
+                    auth_supabase.storage.from_(STORAGE_BUCKET).upload(storage_path, file_data, {"content-type": "application/pdf"})
+                    auth_supabase.table("documents").update({"file_path": storage_path}).eq("id", new_doc_id).execute()
                 
                 # 8. Mirror to local SQLite (optional cache)
                 try:
@@ -325,12 +466,11 @@ def create_app():
                         title=doc_full['title'],
                         abstract=doc_full['abstract'],
                         file_size_bytes=file_size,
-                        year=doc_full['year'],
                         institution_id=final_inst_id,
                         uploader_id=request.user_id,
-                        is_institutional=final_is_institutional,
                         status=DocumentStatus.PENDING,
-                        file_path=storage_path
+                        file_path=storage_path,
+                        is_external_match=is_external_match
                     )
                     db.session.add(new_doc)
                     db.session.commit()
@@ -469,8 +609,18 @@ def create_app():
 
     @app.route('/documents/trending', methods=['GET'])
     def get_trending_documents():
-        """Return top 6 most-downloaded approved documents from Cloud"""
+        """Return top 6 most-downloaded approved documents"""
         try:
+            if os.environ.get('OFFLINE_MODE') == 'true':
+                docs = Document.query.filter_by(status=DocumentStatus.APPROVED).order_by(Document.id.desc()).limit(6).all()
+                return jsonify([{
+                    "id": d.id,
+                    "title": d.title,
+                    "institution": d.institution.name if d.institution else "Independent",
+                    "download_count": 0,
+                    "upload_date": d.upload_date.isoformat()
+                } for d in docs]), 200
+
             res = supabase.table("documents").select("*, institutions(name)")\
                 .eq("status", "approved")\
                 .order("download_count", desc=True)\
@@ -692,7 +842,7 @@ def create_app():
     @app.route('/admin/author-claims', methods=['GET'])
     @login_required
     def get_author_claims():
-        if request.user_role not in ['moderator', 'sys_admin']:
+        if request.user_role not in [UserRole.INST_ADMIN.value, UserRole.SYS_ADMIN.value]:
             return jsonify({"error": "Unauthorized"}), 403
             
         claims = AuthorClaim.query.filter_by(status=DocumentStatus.PENDING).all()
@@ -707,7 +857,7 @@ def create_app():
     @app.route('/admin/author-claims/<int:claim_id>/approve', methods=['POST'])
     @login_required
     def approve_author_claim(claim_id):
-        if request.user_role not in ['moderator', 'sys_admin']:
+        if request.user_role not in [UserRole.INST_ADMIN.value, UserRole.SYS_ADMIN.value]:
             return jsonify({"error": "Unauthorized"}), 403
             
         claim = AuthorClaim.query.get_or_404(claim_id)
@@ -783,7 +933,6 @@ def create_app():
             'public': UserRole.PUBLIC,
             'researcher': UserRole.RESEARCHER,
             'inst_admin': UserRole.INST_ADMIN,
-            'moderator': UserRole.MODERATOR,
             'sys_admin': UserRole.SYS_ADMIN
         }
         
@@ -1432,16 +1581,19 @@ def create_app():
         """Get documents pending moderation, routed by user role and institution"""
         user_role = request.user_role
         
-        # 1. System Admins and Global Moderators see Independent docs
-        if user_role in [UserRole.SYS_ADMIN.value, UserRole.MODERATOR.value]:
-            # Always show non-institutional documents to global admins - fallback to Supabase if user not in SQLite
+        # 1. System Admins see Independent docs (legacy) or all docs
+        if user_role in [UserRole.SYS_ADMIN.value]:
+            # Always show non-institutional documents to global admins
+            user = User.query.get(request.user_id)
+            # Global Sys Admin - sees ALL pending documents
+            pending_docs = Document.query.filter_by(status=DocumentStatus.PENDING).all()
+        elif user_role == UserRole.INST_ADMIN.value:
             user = User.query.get(request.user_id)
             if user and user.institution_id:
-                # Institutional Moderator - Sees documents for their institution
-                pending_docs = Document.query.filter_by(status=DocumentStatus.PENDING, institution_id=user.institution_id, is_institutional=True).all()
+                # Institutional Admin - Sees documents for their institution
+                pending_docs = Document.query.filter_by(status=DocumentStatus.PENDING, institution_id=user.institution_id).all()
             else:
-                # Global Sys Admin or unaffiliated Moderator - sees ALL independent documents
-                pending_docs = Document.query.filter_by(status=DocumentStatus.PENDING, is_institutional=False).all()
+                return jsonify({"error": "No institution associated"}), 403
         else:
             return jsonify({"error": "Unauthorized"}), 403
             
@@ -1452,6 +1604,7 @@ def create_app():
             "upload_date": doc.upload_date.isoformat(),
             "uploader_id": doc.uploader_id,
             "is_institutional": doc.is_institutional,
+            "is_external_match": doc.is_external_match,
             "institution_name": doc.institution.name if doc.institution else "Independent"
         } for doc in pending_docs]
         return jsonify(results), 200
@@ -1460,7 +1613,7 @@ def create_app():
     @login_required
     def update_document_status(doc_id):
         """Update the moderation status of a document and log it"""
-        if request.user_role not in ['moderator', 'sys_admin']:
+        if request.user_role not in [UserRole.INST_ADMIN.value, UserRole.SYS_ADMIN.value]:
             return jsonify({"error": "Unauthorized"}), 403
             
         data = request.get_json()
@@ -1491,7 +1644,7 @@ def create_app():
         from models import ModerationLog
         log_entry = ModerationLog(
             document_id=doc.id,
-            moderator_id=request.user_id,
+            admin_id=request.user_id,
             action=status_str,
             notes=notes
         )
@@ -1504,7 +1657,7 @@ def create_app():
     @login_required
     def get_moderation_logs():
         """Fetch all moderation actions for the audit log"""
-        if request.user_role not in ['moderator', 'sys_admin']:
+        if request.user_role not in [UserRole.INST_ADMIN.value, UserRole.SYS_ADMIN.value]:
             return jsonify({"error": "Unauthorized"}), 403
             
         from models import ModerationLog
@@ -1513,7 +1666,7 @@ def create_app():
         if user_role == UserRole.SYS_ADMIN.value:
             logs = ModerationLog.query.order_by(ModerationLog.timestamp.desc()).limit(100).all()
         else:
-            # For institutional moderators, we should ideally restrict logs to their institution
+            # For institutional admins, we should ideally restrict logs to their institution
             # For now, keeping it robust for the demo layout
             logs = ModerationLog.query.order_by(ModerationLog.timestamp.desc()).limit(100).all()
             

@@ -29,10 +29,8 @@ function ResearcherDashboard() {
     const [collabInterests, setCollabInterests] = useState('');
     const [erbFile, setErbFile] = useState(null);
     const [dataFile, setDataFile] = useState(null);
-    const [showVerificationModal, setShowVerificationModal] = useState(false);
     const [institutions, setInstitutions] = useState([]);
     const [selectedInst, setSelectedInst] = useState('');
-    const [verificationLoading, setVerificationLoading] = useState(false);
     const [notifications, setNotifications] = useState([]);
     const [showNotifications, setShowNotifications] = useState(false);
     const fileInputRef = useRef(null);
@@ -72,23 +70,7 @@ function ResearcherDashboard() {
         } catch (e) { console.error("Could not load institutions", e); }
     };
 
-    const handleVerificationRequest = async (e) => {
-        e.preventDefault();
-        setVerificationLoading(true);
-        try {
-            if (selectedInst) {
-                await axios.post(`${API}/institution/request-affiliation`, { institution_id: selectedInst }, { headers: getAuthHeaders() });
-                setMessage('success:Publishing request submitted! Awaiting administrator approval.');
-                setShowVerificationModal(false);
-            } else {
-                setMessage('error:Please select a publishing option.');
-            }
-        } catch (err) {
-            setMessage('error:Request failed: ' + (err.response?.data?.error || 'Unknown error'));
-        } finally {
-            setVerificationLoading(false);
-        }
-    };
+
 
     const fetchCollabInterests = async () => {
         try {
@@ -361,58 +343,6 @@ function ResearcherDashboard() {
                     </div>
                 </div>
 
-                {/* Verification Modal */}
-                {showVerificationModal && (
-                    <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <div className="card" style={{ maxWidth: '500px', width: '90%', padding: '2rem', position: 'relative' }}>
-                            <button onClick={() => setShowVerificationModal(false)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer' }}>
-                                <X size={20} color="var(--text-muted)" />
-                            </button>
-                            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', marginTop: 0 }}>
-                                <ShieldCheck color="var(--primary)" size={24} /> 
-                                Request Publishing Access
-                            </h2>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem', lineHeight: 1.5 }}>
-                                To maintain the credibility of the IKMS platform, we require researchers to link their profile to a verified institution or apply as an Independent Researcher.
-                            </p>
-                            
-                            <form onSubmit={handleVerificationRequest}>
-                                <div className="form-group">
-                                    <label className="input-label">Select Your Publishing Affiliation</label>
-                                    <select 
-                                        className="input-field"
-                                        value={selectedInst}
-                                        onChange={(e) => setSelectedInst(e.target.value)}
-                                        required
-                                        style={{ border: '1px solid var(--border)', background: 'var(--bg-card)' }}
-                                    >
-                                        <option value="">-- Choose Affiliation --</option>
-                                        <optgroup label="University / Institutional">
-                                            {institutions.map(inst => (
-                                                <option key={inst.id} value={inst.id}>{inst.name}</option>
-                                            ))}
-                                        </optgroup>
-                                        <optgroup label="Independent">
-                                            <option value="independent">Independent Researcher (Global Review)</option>
-                                        </optgroup>
-                                    </select>
-                                </div>
-                                
-                                <div style={{ background: 'rgba(var(--info-rgb), 0.1)', padding: '1rem', borderRadius: 'var(--radius-sm)', marginBottom: '1.5rem', fontSize: '0.85rem', color: 'var(--text-color)' }}>
-                                    <strong>How it works:</strong>
-                                    <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.25rem' }}>
-                                        <li style={{ marginBottom: '0.25rem' }}><strong>Institutional:</strong> Your request will be sent to your university's dashboard. Once approved, you publish under their banner.</li>
-                                        <li><strong>Independent:</strong> Your research will be reviewed directly by the central IKMS moderation team.</li>
-                                    </ul>
-                                </div>
-                                
-                                <button type="submit" className="btn btn-primary w-full" disabled={verificationLoading}>
-                                    {verificationLoading ? 'Submitting...' : 'Submit Request'}
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                )}
 
                 {/* Message Banner */}
                 {message && <div className={`message-banner ${msgType}`} style={{ marginBottom: '1.5rem' }}>{msgText}</div>}
@@ -474,9 +404,9 @@ function ResearcherDashboard() {
                                     Your account is currently in <strong>Reader Mode</strong>. To maintain the integrity of the Ethiopian Indigenous Knowledge database, we require a brief verification process before publishing.
                                 </p>
                                 <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-                                    <button className="btn btn-primary" onClick={() => setShowVerificationModal(true)} style={{ padding: '0.75rem 1.5rem', fontWeight: 600 }}>
-                                        Request Publishing Access
-                                    </button>
+                                    <Link to="/profile-setup" className="btn btn-primary" style={{ padding: '0.75rem 1.5rem', fontWeight: 600 }}>
+                                        Setup Profile & Request Access
+                                    </Link>
                                     <Link to="/" className="btn btn-secondary" style={{ padding: '0.75rem 1.5rem' }}>
                                         Explore Repository
                                     </Link>

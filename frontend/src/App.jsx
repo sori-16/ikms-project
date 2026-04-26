@@ -22,6 +22,7 @@ import AuthorProfile from './pages/AuthorProfile';
 
 // Admin Pages
 import InstitutionDashboard from './pages/admin/InstitutionDashboard';
+import ProfileSetup from './pages/ProfileSetup';
 
 // Protected Route Wrapper (Generic)
 function ProtectedRoute({ children, allowedRoles }) {
@@ -60,6 +61,11 @@ function App() {
         <Route path="/institution/:id" element={<PublicLayout><InstitutionProfile /></PublicLayout>} />
         <Route path="/analytics" element={<PublicLayout><AnalyticsDashboard /></PublicLayout>} />
         <Route path="/author/:id" element={<PublicLayout><AuthorProfile /></PublicLayout>} />
+        <Route path="/profile-setup" element={
+          <ProtectedRoute>
+            <PublicLayout><ProfileSetup /></PublicLayout>
+          </ProtectedRoute>
+        } />
 
         {/* Researcher routes still use Public Layout */}
         <Route path="/library" element={
@@ -75,7 +81,7 @@ function App() {
 
         {/* ── Standalone Master Admin Layout ── */}
         <Route path="/master-admin" element={
-          <ProtectedRoute allowedRoles={['sys_admin', 'moderator']}>
+          <ProtectedRoute allowedRoles={['sys_admin']}>
             <MasterAdminDashboard />
           </ProtectedRoute>
         } />

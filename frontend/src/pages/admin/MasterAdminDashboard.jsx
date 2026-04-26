@@ -329,7 +329,14 @@ function MasterAdminDashboard() {
                         <div key={doc.id} style={{ background: '#fff', borderRadius: 8, padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', borderLeft: '4px solid #f59e0b' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
-                                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 0.5rem', color: '#0f172a' }}>{doc.title}</h3>
+                                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 0.5rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        {doc.title}
+                                        {doc.is_external_match && (
+                                            <span style={{ fontSize: '0.7rem', background: '#dcfce7', color: '#166534', padding: '2px 6px', borderRadius: '4px', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                <CheckCircle size={10} /> Verified externally (CrossRef)
+                                            </span>
+                                        )}
+                                    </h3>
                                     <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', gap: '1rem', marginBottom: '0.5rem' }}>
                                         <span>Uploaded: {new Date(doc.upload_date).toLocaleDateString()}</span>
                                         <span>User ID: {doc.uploader_id}</span>
