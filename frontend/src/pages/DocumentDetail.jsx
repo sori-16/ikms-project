@@ -326,6 +326,64 @@ const DocumentDetail = () => {
                             </div>
                         </div>
                     )}
+
+                    {/* ── Citation Export ── */}
+                    {citations && (
+                        <div className="doc-section">
+                            <h2 className="doc-section-title">
+                                <Copy size={18} /> Cite This Research
+                            </h2>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+                                Select a citation format and copy to your bibliography.
+                            </p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                                {[
+                                    { key: 'apa', label: 'APA', color: '#4f46e5' },
+                                    { key: 'mla', label: 'MLA', color: '#0891b2' },
+                                    { key: 'bibtex', label: 'BibTeX', color: '#059669' }
+                                ].map(({ key, label, color }) => (
+                                    <div key={key} style={{
+                                        background: 'var(--surface)',
+                                        border: '1px solid var(--border)',
+                                        borderRadius: 'var(--radius)',
+                                        overflow: 'hidden'
+                                    }}>
+                                        <div style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            padding: '0.6rem 1rem',
+                                            background: `${color}12`,
+                                            borderBottom: '1px solid var(--border)'
+                                        }}>
+                                            <span style={{ fontWeight: 700, fontSize: '0.8rem', color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                {label}
+                                            </span>
+                                            <button
+                                                onClick={() => copyToClipboard(citations[key], key)}
+                                                style={{
+                                                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                                    background: copiedFormat === key ? '#22c55e' : color,
+                                                    color: '#fff', border: 'none', borderRadius: '6px',
+                                                    padding: '0.3rem 0.85rem', fontSize: '0.8rem',
+                                                    cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                {copiedFormat === key ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy</>}
+                                            </button>
+                                        </div>
+                                        <pre style={{
+                                            margin: 0, padding: '0.85rem 1rem',
+                                            fontSize: '0.82rem', lineHeight: 1.6,
+                                            color: 'var(--text-secondary)',
+                                            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                                            fontFamily: key === 'bibtex' ? 'monospace' : 'inherit'
+                                        }}>
+                                            {citations[key]}
+                                        </pre>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* ── Recommendations ── */}

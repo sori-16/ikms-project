@@ -241,6 +241,27 @@ def create_app():
         if not data or not data.get('email') or not data.get('password'):
             return jsonify({"error": "Missing email or password"}), 400
         
+        # --- OFFLINE MODE BYPASS ---
+        if os.environ.get('OFFLINE_MODE') == 'true':
+            email = data.get('email')
+            user = User.query.filter_by(email=email).first()
+            if user:
+                role_str = user.role.value if hasattr(user.role, 'value') else str(user.role)
+                return jsonify({
+                    "message": "Offline login successful",
+                    "user": {
+                        "id": user.id,
+                        "name": user.name,
+                        "email": user.email,
+                        "role": role_str,
+                        "is_verified": user.is_verified
+                    },
+                    "token": user.id 
+                }), 200
+            else:
+                return jsonify({"error": "User not found in local demo database"}), 401
+        # ---------------------------
+        
         try:
             # Sign in with Supabase Auth
             auth_response = supabase.auth.sign_in_with_password({
@@ -872,6 +893,70 @@ def create_app():
         db.session.commit()
         return jsonify({"message": "Claim approved and author profile linked"}), 200
 
+    # ========== RESEARCHER ENDPOINTS ==========
+    @app.route('/researchers', methods=['GET'])
+    def get_all_researchers():
+        """Get all verified researchers with scholar profiles (for Collaborator Hub)"""
+        try:
+            users = User.query.filter_by(role=UserRole.RESEARCHER, is_verified=True).all()
+            results = []
+            for u in users:
+                inst_name = u.institution.name if u.institution else None
+                doc_count = Document.query.filter_by(uploader_id=u.id, status=DocumentStatus.APPROVED).count()
+                results.append({
+                    "id": u.id,
+                    "name": u.name,
+                    "email": u.email,
+                    "occupation": u.occupation,
+                    "photo_url": u.photo_url,
+                    "research_interests": u.research_interests,
+                    "institution": inst_name,
+                    "publications": doc_count
+                })
+            return jsonify(results), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/researcher/documents', methods=['GET'])
+    @login_required
+    def get_researcher_documents():
+        """Get documents uploaded by the current researcher"""
+        docs = Document.query.filter_by(uploader_id=request.user_id).order_by(Document.upload_date.desc()).all()
+        return jsonify([{
+            "id": d.id,
+            "title": d.title,
+            "status": d.status.value if hasattr(d.status, 'value') else d.status,
+            "upload_date": d.upload_date.isoformat() if d.upload_date else None,
+            "download_count": d.download_count or 0,
+            "view_count": d.view_count or 0,
+            "is_external_match": d.is_external_match or False,
+            "moderation_notes": d.moderation_notes,
+            "institution_name": d.institution.name if d.institution else "Independent"
+        } for d in docs]), 200
+
+    @app.route('/researcher/stats', methods=['GET'])
+    @login_required
+    def get_researcher_stats():
+        """Get impact stats for the current researcher"""
+        docs = Document.query.filter_by(uploader_id=request.user_id).all()
+        approved = [d for d in docs if d.status == DocumentStatus.APPROVED]
+        total_downloads = sum(d.download_count or 0 for d in approved)
+        total_views = sum(d.view_count or 0 for d in approved)
+        most_popular = max(approved, key=lambda d: (d.download_count or 0) + (d.view_count or 0), default=None)
+
+        return jsonify({
+            "total_publications": len(approved),
+            "pending_publications": len([d for d in docs if d.status == DocumentStatus.PENDING]),
+            "total_downloads": total_downloads,
+            "total_views": total_views,
+            "most_popular": {
+                "id": most_popular.id,
+                "title": most_popular.title,
+                "downloads": most_popular.download_count or 0,
+                "views": most_popular.view_count or 0
+            } if most_popular else None
+        }), 200
+
     # ========== SYSTEM ADMIN ENDPOINTS ==========
     @app.route('/admin/stats', methods=['GET'])
     @login_required
@@ -945,52 +1030,37 @@ def create_app():
         
         return jsonify({"message": f"User {user.name} role updated to {new_role_str}"}), 200
 
-    @app.route('/researcher/stats', methods=['GET'])
-    @login_required
-    def get_researcher_stats():
-        """Get impact stats for the logged-in researcher"""
-        # Get all documents uploaded by this user
-        docs = Document.query.filter_by(uploader_id=request.user_id).all()
-        
-        total_publications = len(docs)
-        total_downloads = sum(d.download_count for d in docs)
-        total_views = sum(d.view_count for d in docs)
-        
-        return jsonify({
-            "total_publications": total_publications,
-            "total_downloads": total_downloads,
-            "total_views": total_views
-        }), 200
-
-    @app.route('/researcher/documents', methods=['GET'])
-    @login_required
-    def get_researcher_documents():
-        """Get all documents uploaded by the logged-in researcher"""
-        docs = Document.query.filter_by(uploader_id=request.user_id).all()
-        return jsonify([{
-            "id": d.id,
-            "title": d.title,
-            "status": d.status.value if hasattr(d.status, 'value') else d.status,
-            "upload_date": d.upload_date.isoformat() if d.upload_date else None,
-            "moderation_notes": getattr(d, 'moderation_notes', None)
-        } for d in docs]), 200
-
     @app.route('/institutions/<int:inst_id>/analytics', methods=['GET'])
     @login_required
     def get_institution_analytics(inst_id):
-        """Get analytics for a specific institution from Cloud"""
-        # Security: Only inst_admin for this inst or sys_admin
+        """Get analytics for a specific institution (Cloud or Local fallback)"""
         try:
+            # 1. OFFLINE_MODE Bypass
+            if os.environ.get('OFFLINE_MODE') == 'true':
+                inst = Institution.query.get_or_404(inst_id)
+                docs = Document.query.filter_by(institution_id=inst_id, status=DocumentStatus.APPROVED).all()
+                total_downloads = sum(d.download_count or 0 for d in docs)
+                total_views = sum(d.view_count or 0 for d in docs)
+                active_researchers = db.session.query(Document.uploader_id).filter_by(institution_id=inst_id).distinct().count()
+                
+                return jsonify({
+                    "institution_name": inst.name,
+                    "total_documents": len(docs),
+                    "total_downloads": total_downloads,
+                    "total_views": total_views,
+                    "active_researchers": active_researchers,
+                    "institution_id": inst_id
+                }), 200
+
+            # 2. Cloud Path
             if request.user_role != UserRole.SYS_ADMIN.value:
                 user_res = supabase.table("users").select("institution_id, role").eq("id", request.user_id).execute()
                 if not user_res.data or user_res.data[0].get('institution_id') != inst_id or user_res.data[0].get('role') != 'inst_admin':
                     return jsonify({"error": "Unauthorized"}), 403
                     
-            # 0. Fetch institution name
             inst_info_res = supabase.table("institutions").select("name").eq("id", inst_id).execute()
             inst_name = inst_info_res.data[0]['name'] if inst_info_res.data else "Unknown Institution"
 
-            # 1. Document Stats
             docs_res = supabase.table("documents").select("download_count, view_count")\
                 .eq("institution_id", inst_id)\
                 .eq("status", "approved").execute()
@@ -1000,7 +1070,6 @@ def create_app():
             total_downloads = sum(d.get('download_count', 0) for d in docs)
             total_views = sum(d.get('view_count', 0) for d in docs)
             
-            # 2. Researcher Stats (Distinct uploader_id)
             research_res = supabase.table("documents").select("uploader_id")\
                 .eq("institution_id", inst_id).execute()
             active_researchers = len(set(d['uploader_id'] for d in research_res.data if d.get('uploader_id')))
@@ -1042,8 +1111,24 @@ def create_app():
     @login_required
     @role_required(UserRole.INST_ADMIN.value)
     def get_my_institution_pending():
-        """Get pending documents for the admin's institution from Cloud"""
+        """Get pending documents for the admin's institution (Cloud or Local)"""
         try:
+            # 1. OFFLINE_MODE Bypass
+            if os.environ.get('OFFLINE_MODE') == 'true':
+                user = User.query.get(request.user_id)
+                if not user or not user.institution_id:
+                    return jsonify({"error": "No institution associated"}), 404
+                
+                docs = Document.query.filter_by(institution_id=user.institution_id, status=DocumentStatus.PENDING).all()
+                return jsonify([{
+                    "id": d.id,
+                    "title": d.title,
+                    "abstract": d.abstract or '',
+                    "upload_date": d.upload_date.isoformat() if d.upload_date else None,
+                    "uploader_name": d.uploader.name if d.uploader else "Unknown"
+                } for d in docs]), 200
+
+            # 2. Cloud Path
             user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
             if not user_res.data or not user_res.data[0].get('institution_id'):
                 return jsonify({"error": "No institution associated"}), 404
@@ -1064,9 +1149,7 @@ def create_app():
             
             return jsonify(results), 200
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"DEBUG: get_my_institution_pending error: {e}")
+            print(f"Pending fetch error: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/logo', methods=['POST'])
@@ -1119,12 +1202,29 @@ def create_app():
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/profile', methods=['GET'])
-
     @login_required
     @role_required(UserRole.INST_ADMIN.value)
     def get_my_institution_profile():
-        """Get the admin's own institution profile from Cloud"""
+        """Get the admin's own institution profile (Cloud or Local)"""
         try:
+            # 1. OFFLINE_MODE Bypass
+            if os.environ.get('OFFLINE_MODE') == 'true':
+                user = User.query.get(request.user_id)
+                if not user or not user.institution_id:
+                    return jsonify({"error": "No institution associated"}), 404
+                inst = Institution.query.get(user.institution_id)
+                if not inst:
+                    return jsonify({"error": "Institution not found"}), 404
+                return jsonify({
+                    "id": inst.id,
+                    "name": inst.name,
+                    "description": inst.description,
+                    "location": inst.location,
+                    "website": inst.website,
+                    "logo_path": inst.logo_path
+                }), 200
+
+            # 2. Cloud Path
             user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
             if not user_res.data or not user_res.data[0].get('institution_id'):
                 return jsonify({"error": "No institution associated"}), 404
@@ -1165,8 +1265,25 @@ def create_app():
     @login_required
     @role_required(UserRole.INST_ADMIN.value)
     def get_my_institution_documents():
-        """Get all documents (approved + pending) for the admin's institution from Cloud"""
+        """Get all documents for the admin's institution (Cloud or Local)"""
         try:
+            # 1. OFFLINE_MODE Bypass
+            if os.environ.get('OFFLINE_MODE') == 'true':
+                user = User.query.get(request.user_id)
+                if not user or not user.institution_id:
+                    return jsonify({"error": "No institution associated"}), 404
+                docs = Document.query.filter_by(institution_id=user.institution_id).order_by(Document.upload_date.desc()).all()
+                return jsonify([{
+                    "id": d.id,
+                    "title": d.title,
+                    "abstract": d.abstract,
+                    "upload_date": d.upload_date.isoformat() if d.upload_date else None,
+                    "status": d.status.value if hasattr(d.status, 'value') else str(d.status),
+                    "uploader_id": d.uploader_id,
+                    "download_count": d.download_count or 0
+                } for d in docs]), 200
+
+            # 2. Cloud Path
             user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
             if not user_res.data or not user_res.data[0].get('institution_id'):
                 return jsonify({"error": "No institution associated"}), 404
@@ -1176,17 +1293,30 @@ def create_app():
             ).eq("institution_id", inst_id).order("upload_date", desc=True).execute()
             return jsonify(docs_res.data or []), 200
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"DEBUG: get_my_institution_documents error: {e}")
+            print(f"Documents fetch error: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/members', methods=['GET'])
     @login_required
     @role_required(UserRole.INST_ADMIN.value)
     def get_my_institution_members():
-        """Get all verified researchers under the admin's institution from Cloud"""
+        """Get all researchers under the admin's institution (Cloud or Local)"""
         try:
+            # 1. OFFLINE_MODE Bypass
+            if os.environ.get('OFFLINE_MODE') == 'true':
+                user = User.query.get(request.user_id)
+                if not user or not user.institution_id:
+                    return jsonify({"error": "No institution associated"}), 404
+                members = User.query.filter_by(institution_id=user.institution_id).all()
+                return jsonify([{
+                    "id": m.id,
+                    "name": m.name,
+                    "email": m.email,
+                    "role": m.role.value if hasattr(m.role, 'value') else str(m.role),
+                    "created_at": None # We don't store created_at in SQLite User model currently
+                } for m in members]), 200
+
+            # 2. Cloud Path
             user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
             if not user_res.data or not user_res.data[0].get('institution_id'):
                 return jsonify({"error": "No institution associated"}), 404
@@ -1196,9 +1326,7 @@ def create_app():
             ).eq("institution_id", inst_id).execute()
             return jsonify(members_res.data or []), 200
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"DEBUG: get_my_institution_members error: {e}")
+            print(f"Members fetch error: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/affiliation-requests', methods=['GET'])

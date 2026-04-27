@@ -80,6 +80,10 @@ function Navbar() {
                             <BarChart2 size={15} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
                             Impact
                         </Link>
+                        <Link to="/collaborators" className="nav-link">
+                            <BookOpen size={15} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
+                            Collaborate
+                        </Link>
 
                         {authenticated && (
                             <Link to="/library" className="nav-link">
@@ -140,6 +144,7 @@ function Navbar() {
                 <Link to="/" className="nav-link" onClick={() => setDrawerOpen(false)}>🔍 Search</Link>
                 <Link to="/institutions" className="nav-link" onClick={() => setDrawerOpen(false)}>🏛 Institutions</Link>
                 <Link to="/analytics" className="nav-link" onClick={() => setDrawerOpen(false)}>📊 Impact Analytics</Link>
+                <Link to="/collaborators" className="nav-link" onClick={() => setDrawerOpen(false)}>🤝 Find Collaborators</Link>
 
                 {authenticated && (
                     <>

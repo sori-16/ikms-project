@@ -383,6 +383,57 @@ function ResearcherDashboard() {
                                         <div className="stat-label">Active Alerts</div>
                                     </div>
                                 </div>
+                                {/* Impact Per-Paper Breakdown */}
+                                {myDocuments.length > 0 && (
+                                    <div className="card" style={{ marginTop: '1.5rem', padding: '1.5rem' }}>
+                                        <h3 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            📊 My Research Impact
+                                        </h3>
+                                        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
+                                            Downloads & views for each of your approved papers
+                                        </p>
+                                        {myDocuments.filter(d => d.status === 'approved').length === 0 ? (
+                                            <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', padding: '1rem', textAlign: 'center' }}>
+                                                No approved papers yet. Submit a paper to see your impact here!
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                                {(() => {
+                                                    const approved = myDocuments.filter(d => d.status === 'approved');
+                                                    const maxVal = Math.max(...approved.map(d => Math.max(d.download_count || 0, d.view_count || 0)), 1);
+                                                    return approved.map(doc => (
+                                                        <div key={doc.id}>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                                                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                    {doc.title}
+                                                                </span>
+                                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                                                    {doc.download_count || 0} dl · {doc.view_count || 0} views
+                                                                </span>
+                                                            </div>
+                                                            {/* Downloads bar */}
+                                                            <div style={{ height: 8, background: 'var(--surface)', borderRadius: 99, marginBottom: '0.3rem', overflow: 'hidden' }}>
+                                                                <div style={{ height: '100%', width: `${((doc.download_count || 0) / maxVal) * 100}%`, background: 'var(--success)', borderRadius: 99, transition: 'width 0.6s ease' }} />
+                                                            </div>
+                                                            {/* Views bar */}
+                                                            <div style={{ height: 6, background: 'var(--surface)', borderRadius: 99, overflow: 'hidden' }}>
+                                                                <div style={{ height: '100%', width: `${((doc.view_count || 0) / maxVal) * 100}%`, background: 'var(--primary)', borderRadius: 99, opacity: 0.6, transition: 'width 0.6s ease' }} />
+                                                            </div>
+                                                        </div>
+                                                    ));
+                                                })()}
+                                                <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.25rem' }}>
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                                        <span style={{ display: 'inline-block', width: 12, height: 8, background: 'var(--success)', borderRadius: 2 }} /> Downloads
+                                                    </span>
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                                        <span style={{ display: 'inline-block', width: 12, height: 8, background: 'var(--primary)', borderRadius: 2, opacity: 0.6 }} /> Views
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 <div className="dash-quick-actions card" style={{ marginTop: '1.5rem', padding: '1.5rem' }}>
                                     <h3 style={{ marginBottom: '1rem' }}>Quick Actions</h3>
                                     <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -391,6 +442,9 @@ function ResearcherDashboard() {
                                         </button>
                                         <Link to="/" className="btn btn-secondary">
                                             <Search size={16} /> Search Research
+                                        </Link>
+                                        <Link to="/collaborators" className="btn btn-secondary">
+                                            🤝 Find Collaborators
                                         </Link>
                                     </div>
                                 </div>

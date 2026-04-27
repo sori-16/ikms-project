@@ -23,6 +23,7 @@ import AuthorProfile from './pages/AuthorProfile';
 // Admin Pages
 import InstitutionDashboard from './pages/admin/InstitutionDashboard';
 import ProfileSetup from './pages/ProfileSetup';
+import Collaborators from './pages/Collaborators';
 
 // Protected Route Wrapper (Generic)
 function ProtectedRoute({ children, allowedRoles }) {
@@ -61,6 +62,7 @@ function App() {
         <Route path="/institution/:id" element={<PublicLayout><InstitutionProfile /></PublicLayout>} />
         <Route path="/analytics" element={<PublicLayout><AnalyticsDashboard /></PublicLayout>} />
         <Route path="/author/:id" element={<PublicLayout><AuthorProfile /></PublicLayout>} />
+        <Route path="/collaborators" element={<PublicLayout><Collaborators /></PublicLayout>} />
         <Route path="/profile-setup" element={
           <ProtectedRoute>
             <PublicLayout><ProfileSetup /></PublicLayout>

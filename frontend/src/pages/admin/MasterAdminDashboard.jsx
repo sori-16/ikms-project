@@ -33,56 +33,40 @@ function MasterAdminDashboard() {
     const navigate = useNavigate();
 
     // Data States
-    const [pendingDocs, setPendingDocs] = useState([]);
-    const [claims, setClaims] = useState([]);
-    const [auditLog, setAuditLog] = useState([]);
     const [stats, setStats] = useState(null);
     const [users, setUsers] = useState([]);
     const [institutions, setInstitutions] = useState([]);
-    const [indyRequests, setIndyRequests] = useState([]);
 
     // Per-section loading
     const [dataLoading, setDataLoading] = useState({});
     const setSection = (key, val) => setDataLoading(p => ({...p, [key]: val}));
 
     // UI States
-    const [activeTab, setActiveTab] = useState('queue');
+    const [activeTab, setActiveTab] = useState('overview');
     const [searchQuery, setSearchQuery] = useState('');
-    const [expandedId, setExpandedId] = useState(null);
     
     // Modals
-    const [rejectModal, setRejectModal] = useState(null); // { docId, reason }
-    const [revisionModal, setRevisionModal] = useState(null); // { docId, notes }
     const [instModal, setInstModal] = useState(null); // { mode: 'create'|'edit', data }
     const [assignModal, setAssignModal] = useState(null); // { instId, userId }
     const [deleteInstId, setDeleteInstId] = useState(null);
 
     useEffect(() => {
         const u = getUser();
-        if (!u || !['sys_admin', 'moderator'].includes(u.role)) {
+        if (!u || u.role !== 'sys_admin') {
             navigate('/login'); return;
         }
         setUser(u);
-        // Default tab based on role
-        if (!activeTab || (u.role === 'moderator' && ['overview', 'users', 'institutions', 'system'].includes(activeTab))) {
-            setActiveTab('queue');
-        } else if (u.role === 'sys_admin' && activeTab === 'queue' && !activeTab) {
+        if (!activeTab || activeTab === 'queue') {
             setActiveTab('overview');
         }
         loadAllData(u.role);
     }, [navigate]);
 
-    const loadAllData = (role) => {
+    const loadAllData = () => {
         // Fire all fetches immediately, UI shows without waiting
-        fetchPending();
-        fetchClaims();
-        fetchAudit();
-        if (role === 'sys_admin') {
-            fetchStats();
-            fetchUsers();
-            fetchInstitutions();
-            fetchIndyRequests();
-        }
+        fetchStats();
+        fetchUsers();
+        fetchInstitutions();
         setLoading(false); // Show UI right away
     };
 
@@ -92,13 +76,9 @@ function MasterAdminDashboard() {
     };
 
     // --- Fetchers ---
-    const fetchPending = async () => { setSection('pending', true); try { const r = await axios.get(`${API}/documents/pending`, { headers: getAuthHeaders() }); setPendingDocs(r.data); } catch {} finally { setSection('pending', false); } };
-    const fetchClaims = async () => { setSection('claims', true); try { const r = await axios.get(`${API}/admin/author-claims`, { headers: getAuthHeaders() }); setClaims(r.data); } catch {} finally { setSection('claims', false); } };
-    const fetchAudit = async () => { setSection('audit', true); try { const r = await axios.get(`${API}/admin/moderation-logs`, { headers: getAuthHeaders() }); setAuditLog(r.data); } catch {} finally { setSection('audit', false); } };
     const fetchStats = async () => { setSection('stats', true); try { const r = await axios.get(`${API}/admin/stats`, { headers: getAuthHeaders() }); setStats(r.data); } catch {} finally { setSection('stats', false); } };
     const fetchUsers = async () => { setSection('users', true); try { const r = await axios.get(`${API}/admin/users`, { headers: getAuthHeaders() }); setUsers(r.data); } catch {} finally { setSection('users', false); } };
     const fetchInstitutions = async () => { setSection('insts', true); try { const r = await axios.get(`${API}/admin/institutions`, { headers: getAuthHeaders() }); setInstitutions(r.data); } catch(e) { console.error('Institutions error:', e.response?.data || e.message); } finally { setSection('insts', false); } };
-    const fetchIndyRequests = async () => { setSection('indy', true); try { const r = await axios.get(`${API}/admin/independent-requests`, { headers: getAuthHeaders() }); setIndyRequests(r.data); } catch {} finally { setSection('indy', false); } };
 
     // --- Actions ---
     const handleRoleUpdate = async (userId, newRole) => {
@@ -107,56 +87,6 @@ function MasterAdminDashboard() {
             showToast('Role updated successfully.');
             fetchUsers();
         } catch { showToast('Failed to update role.', 'error'); }
-    };
-
-    const handleApproveDoc = async (docId) => {
-        try {
-            await axios.put(`${API}/documents/${docId}/status`, { status: 'approved' }, { headers: getAuthHeaders() });
-            showToast('Document approved globally!');
-            fetchPending(); fetchAudit(); fetchStats();
-        } catch { showToast('Failed to approve document.', 'error'); }
-    };
-
-    const handleRejectDoc = async () => {
-        if (!rejectModal) return;
-        try {
-            await axios.put(`${API}/documents/${rejectModal.docId}/status`, { status: 'rejected', notes: rejectModal.reason }, { headers: getAuthHeaders() });
-            showToast('Document rejected.');
-            setRejectModal(null); fetchPending(); fetchAudit(); fetchStats();
-        } catch { showToast('Failed to reject.', 'error'); }
-    };
-
-    const handleRequestRevision = async () => {
-        if (!revisionModal) return;
-        try {
-            await axios.put(`${API}/documents/${revisionModal.docId}/status`, { status: 'revision_requested', notes: revisionModal.notes }, { headers: getAuthHeaders() });
-            showToast('Revision requested.');
-            setRevisionModal(null); fetchPending(); fetchAudit(); fetchStats();
-        } catch { showToast('Failed to request revision.', 'error'); }
-    };
-
-    const handleApproveClaim = async (claimId) => {
-        try {
-            await axios.post(`${API}/admin/author-claims/${claimId}/approve`, {}, { headers: getAuthHeaders() });
-            showToast('Claim approved!');
-            fetchClaims(); fetchAudit();
-        } catch { showToast('Failed to approve claim.', 'error'); }
-    };
-
-    const handleApproveIndy = async (reqId) => {
-        try {
-            await axios.post(`${API}/admin/independent-requests/${reqId}/approve`, {}, { headers: getAuthHeaders() });
-            showToast('Independent Publisher approved!');
-            fetchIndyRequests(); fetchUsers();
-        } catch { showToast('Failed to approve independent request.', 'error'); }
-    };
-
-    const handleRejectIndy = async (reqId) => {
-        try {
-            await axios.post(`${API}/admin/independent-requests/${reqId}/reject`, {}, { headers: getAuthHeaders() });
-            showToast('Independent Request rejected.');
-            fetchIndyRequests();
-        } catch { showToast('Failed to reject independent request.', 'error'); }
     };
 
     const handleSaveInstitution = async () => {
@@ -193,19 +123,12 @@ function MasterAdminDashboard() {
 
     // --- SIDEBAR ---
     const SideNav = () => {
-        const standardTabs = [
-            { id: 'queue', label: 'Review Queue', icon: CheckSquare, badge: pendingDocs.length },
-            { id: 'claims', label: 'Author Claims', icon: Users, badge: claims.length },
-            { id: 'audit', label: 'Audit Log', icon: RotateCcw },
-        ];
         const sysAdminTabs = [
             { id: 'overview', label: 'System Overview', icon: Activity },
             { id: 'users', label: 'User Directory', icon: Shield },
             { id: 'institutions', label: 'Institutions', icon: Building2 },
             { id: 'system', label: 'System Status', icon: Database },
         ];
-
-        const tabsToRender = user?.role === 'sys_admin' ? [...sysAdminTabs, ...standardTabs] : standardTabs;
 
         return (
             <aside style={{ width: '260px', background: '#0f2b3d', color: '#fff', display: 'flex', flexDirection: 'column', height: '100vh', flexShrink: 0 }}>
@@ -221,7 +144,7 @@ function MasterAdminDashboard() {
                 </div>
 
                 <nav style={{ flex: 1, padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', overflowY: 'auto' }}>
-                    {tabsToRender.map(t => (
+                    {sysAdminTabs.map(t => (
                         <button
                             key={t.id}
                             onClick={() => setActiveTab(t.id)}
@@ -238,11 +161,6 @@ function MasterAdminDashboard() {
                                 <t.icon size={18} color={activeTab === t.id ? '#38bdf8' : '#94a3b8'} />
                                 {t.label}
                             </div>
-                            {t.badge > 0 && (
-                                <span style={{ background: '#22c55e', color: '#fff', fontSize: '0.7rem', fontWeight: 700, padding: '2px 6px', borderRadius: 99 }}>
-                                    {t.badge}
-                                </span>
-                            )}
                         </button>
                     ))}
                 </nav>
@@ -265,7 +183,6 @@ function MasterAdminDashboard() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                 <div style={{ position: 'relative', cursor: 'pointer' }}>
                     <Bell size={20} color="#64748b" />
-                    {pendingDocs.length > 0 && <span style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, background: '#ef4444', borderRadius: '50%' }} />}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <div style={{ textAlign: 'right' }}>
@@ -298,12 +215,6 @@ function MasterAdminDashboard() {
                         <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0f172a', margin: '0.2rem 0' }}>{stats?.documents?.approved || 0}</div>
                     </div>
                 </div>
-                <div style={{ background: '#fff', borderRadius: 8, padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', borderLeft: '4px solid #f59e0b' }}>
-                    <div>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Pending Review</div>
-                        <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0f172a', margin: '0.2rem 0' }}>{stats?.documents?.pending || 0}</div>
-                    </div>
-                </div>
                 <div style={{ background: '#fff', borderRadius: 8, padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', borderLeft: '4px solid #8b5cf6' }}>
                     <div>
                         <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Institutions</div>
@@ -314,116 +225,14 @@ function MasterAdminDashboard() {
         </div>
     );
 
-    // SysAdmin & Mod: Review Queue
-    const renderQueue = () => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {pendingDocs.length === 0 ? (
-                <div style={{ padding: '3rem', textAlign: 'center', background: '#fff', borderRadius: 8, color: '#64748b' }}>
-                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🎉</div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 600, color: '#0f172a' }}>Global queue is clear!</div>
-                    <p style={{ fontSize: '0.9rem' }}>No independent documents require moderation right now.</p>
-                </div>
-            ) : (
-                <div style={{ display: 'grid', gap: '1rem' }}>
-                    {pendingDocs.map(doc => (
-                        <div key={doc.id} style={{ background: '#fff', borderRadius: 8, padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', borderLeft: '4px solid #f59e0b' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div>
-                                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 0.5rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        {doc.title}
-                                        {doc.is_external_match && (
-                                            <span style={{ fontSize: '0.7rem', background: '#dcfce7', color: '#166534', padding: '2px 6px', borderRadius: '4px', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                                <CheckCircle size={10} /> Verified externally (CrossRef)
-                                            </span>
-                                        )}
-                                    </h3>
-                                    <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', gap: '1rem', marginBottom: '0.5rem' }}>
-                                        <span>Uploaded: {new Date(doc.upload_date).toLocaleDateString()}</span>
-                                        <span>User ID: {doc.uploader_id}</span>
-                                    </div>
-                                    <button onClick={() => setExpandedId(expandedId === doc.id ? null : doc.id)} style={{ background: 'none', border: 'none', color: '#0ea5e9', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                        {expandedId === doc.id ? <EyeOff size={14}/> : <Eye size={14}/>} {expandedId === doc.id ? 'Hide Abstract' : 'Read Abstract'}
-                                    </button>
-                                    {expandedId === doc.id && doc.abstract && (
-                                        <p style={{ fontSize: '0.9rem', color: '#475569', background: '#f8fafc', padding: '1rem', borderRadius: 8, marginTop: '1rem', lineHeight: 1.6 }}>{doc.abstract}</p>
-                                    )}
-                                </div>
-                                <div style={{ display: 'flex', gap: '0.75rem', flexShrink: 0 }}>
-                                    <button onClick={() => handleApproveDoc(doc.id)} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: 6, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}><CheckCircle size={16}/> Approve</button>
-                                    <button onClick={() => setRevisionModal({ docId: doc.id, notes: '' })} style={{ background: '#f59e0b', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: 6, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}><RotateCcw size={16}/> Revise</button>
-                                    <button onClick={() => setRejectModal({ docId: doc.id, reason: '' })} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: 6, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}><XCircle size={16}/> Reject</button>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-
-    // SysAdmin & Mod: Author Claims
-    const renderClaims = () => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                    <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        <tr>
-                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Researcher</th>
-                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Claimed Document</th>
-                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Date</th>
-                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {claims.map(claim => (
-                            <tr key={claim.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.9rem', fontWeight: 600, color: '#0f172a' }}>{claim.user_name} <br/><span style={{ fontSize:'0.8rem', fontWeight: 400, color: '#64748b' }}>{claim.user_email}</span></td>
-                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem' }}><strong>{claim.doc_title}</strong></td>
-                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{new Date(claim.created_at).toLocaleDateString()}</td>
-                                <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
-                                    <button onClick={() => handleApproveClaim(claim.id)} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '0.4rem 0.8rem', borderRadius: 4, fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>Verify Claim</button>
-                                </td>
-                            </tr>
-                        ))}
-                        {claims.length === 0 && <tr><td colSpan="4" style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>No pending authorship claims.</td></tr>}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
 
     // SysAdmin: Users Directory
     const renderUsers = () => {
-        const ROLES = ['public', 'researcher', 'moderator', 'inst_admin', 'sys_admin'];
+        const ROLES = ['public', 'researcher', 'inst_admin', 'sys_admin'];
         const filtered = users.filter(u => (u.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (u.email || '').toLowerCase().includes(searchQuery.toLowerCase()));
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                {indyRequests.length > 0 && (
-                    <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', borderLeft: '4px solid var(--info)' }}>
-                        <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between' }}>
-                            <h3 style={{ margin: 0, fontSize: '1rem', color: '#0f172a' }}>Independent Publishing Requests</h3>
-                            <span style={{ background: 'var(--info)', color: '#fff', padding: '2px 8px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 600 }}>{indyRequests.length} Pending</span>
-                        </div>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                            <tbody>
-                                {indyRequests.map(req => (
-                                    <tr key={req.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                        <td style={{ padding: '1rem 1.5rem', fontSize: '0.9rem', fontWeight: 600 }}>{req.user_name}</td>
-                                        <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{req.user_email}</td>
-                                        <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{new Date(req.created_at).toLocaleDateString()}</td>
-                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
-                                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                                                <button onClick={() => handleApproveIndy(req.id)} className="btn btn-sm" style={{ background: '#dcfce7', color: '#166534', border: 'none' }}><CheckCircle size={14}/> Approve</button>
-                                                <button onClick={() => handleRejectIndy(req.id)} className="btn btn-sm btn-ghost" style={{ color: '#ef4444' }}><XCircle size={14}/> Reject</button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-                
+
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'space-between' }}>
                     <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>System User Directory</h2>
                     <div style={{ position: 'relative', width: 300 }}>
@@ -461,30 +270,6 @@ function MasterAdminDashboard() {
         );
     };
 
-    // Mod: Audit
-    const renderAudit = () => (
-        <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}><tr>
-                    <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Document</th>
-                    <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Action</th>
-                    <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Notes</th>
-                    <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Date</th>
-                </tr></thead>
-                <tbody>
-                    {auditLog.map(log => (
-                        <tr key={log.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', fontWeight: 600 }}>{log.doc_title}</td>
-                            <td style={{ padding: '1rem 1.5rem' }}><StatusBadge status={log.action} /></td>
-                            <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem' }}>{log.notes || '-'}</td>
-                            <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{new Date(log.timestamp).toLocaleString()}</td>
-                        </tr>
-                    ))}
-                    {auditLog.length === 0 && <tr><td colSpan="4" style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>No moderation actions recorded.</td></tr>}
-                </tbody>
-            </table>
-        </div>
-    );
 
     const renderInstitutions = () => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -569,45 +354,12 @@ function MasterAdminDashboard() {
                 )}
 
                 <main style={{ flex: 1, overflowY: 'auto', padding: '2rem 3rem' }}>
-                    {activeTab === 'overview' && user?.role === 'sys_admin' && renderOverview()}
-                    {activeTab === 'queue' && renderQueue()}
-                    {activeTab === 'claims' && renderClaims()}
-                    {activeTab === 'users' && user?.role === 'sys_admin' && renderUsers()}
-                    {activeTab === 'institutions' && user?.role === 'sys_admin' && renderInstitutions()}
-                    {activeTab === 'system' && user?.role === 'sys_admin' && renderSystem()}
-                    {activeTab === 'audit' && renderAudit()}
+                    {activeTab === 'overview' && renderOverview()}
+                    {activeTab === 'users' && renderUsers()}
+                    {activeTab === 'institutions' && renderInstitutions()}
+                    {activeTab === 'system' && renderSystem()}
                 </main>
             </div>
-
-            {/* Reject Modal */}
-            {rejectModal && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                    <div style={{ background: '#fff', padding: '2rem', borderRadius: 8, width: 400, boxShadow: 'var(--shadow-xl)' }}>
-                        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444', margin: '0 0 1rem' }}><XCircle size={20}/> Reject Document</h3>
-                        <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '1rem' }}>Provide a reason for rejection (required):</p>
-                        <textarea rows={4} value={rejectModal.reason} onChange={e => setRejectModal({...rejectModal, reason: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none' }} />
-                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
-                            <button onClick={() => setRejectModal(null)} style={{ padding: '0.5rem 1rem', background: '#f1f5f9', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-                            <button disabled={!rejectModal.reason.trim()} onClick={handleRejectDoc} style={{ padding: '0.5rem 1rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer', opacity: !rejectModal.reason.trim() ? 0.5 : 1 }}>Confirm Reject</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            
-            {/* Revision Modal */}
-            {revisionModal && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                    <div style={{ background: '#fff', padding: '2rem', borderRadius: 8, width: 400, boxShadow: 'var(--shadow-xl)' }}>
-                        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f59e0b', margin: '0 0 1rem' }}><RotateCcw size={20}/> Request Revision</h3>
-                        <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '1rem' }}>Detail what the researcher urgently needs to fix:</p>
-                        <textarea rows={4} value={revisionModal.notes} onChange={e => setRevisionModal({...revisionModal, notes: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none' }} />
-                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
-                            <button onClick={() => setRevisionModal(null)} style={{ padding: '0.5rem 1rem', background: '#f1f5f9', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-                            <button disabled={!revisionModal.notes.trim()} onClick={handleRequestRevision} style={{ padding: '0.5rem 1rem', background: '#f59e0b', color: 'white', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer', opacity: !revisionModal.notes.trim() ? 0.5 : 1 }}>Request Revision</button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Institution Create/Edit Modal */}
             {instModal && (

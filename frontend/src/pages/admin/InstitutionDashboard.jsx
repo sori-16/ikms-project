@@ -42,6 +42,8 @@ function InstitutionDashboard() {
     // UI State
     const [searchQuery, setSearchQuery] = useState('');
     const [toast, setToast] = useState(null);
+    const [dataLoading, setDataLoading] = useState({});
+    const setSection = (key, val) => setDataLoading(p => ({...p, [key]: val}));
 
     // Profile Edit
     const [editDesc, setEditDesc] = useState('');
@@ -66,13 +68,15 @@ function InstitutionDashboard() {
         loadAll();
     }, [navigate]);
 
-    const loadAll = async () => {
-        setLoading(true);
-        await Promise.allSettled([
-            fetchStats(), fetchPending(), fetchAllDocs(),
-            fetchMembers(), fetchAffRequests(), fetchProfile()
-        ]);
-        setLoading(false);
+    const loadAll = () => {
+        // Fire all fetches immediately, UI shows without waiting
+        fetchStats();
+        fetchPending();
+        fetchAllDocs();
+        fetchMembers();
+        fetchAffRequests();
+        fetchProfile();
+        setLoading(false); // Show UI shell right away
     };
 
     const showToast = (msg, type = 'success') => {
@@ -80,19 +84,20 @@ function InstitutionDashboard() {
         setTimeout(() => setToast(null), 3000);
     };
 
-    const fetchStats   = async () => { try { const r = await axios.get(`${API}/institutions/my/analytics`, { headers: getAuthHeaders() }); setStats(r.data); } catch {} };
-    const fetchPending = async () => { try { const r = await axios.get(`${API}/institutions/my/pending`, { headers: getAuthHeaders() }); setPendingDocs(r.data); } catch {} };
-    const fetchAllDocs = async () => { try { const r = await axios.get(`${API}/institutions/my/documents`, { headers: getAuthHeaders() }); setAllDocs(r.data); } catch {} };
-    const fetchMembers = async () => { try { const r = await axios.get(`${API}/institutions/my/members`, { headers: getAuthHeaders() }); setMembers(r.data); } catch {} };
-    const fetchAffRequests = async () => { try { const r = await axios.get(`${API}/institutions/my/affiliation-requests`, { headers: getAuthHeaders() }); setAffReqs(r.data); } catch {} };
+    const fetchStats   = async () => { setSection('stats', true); try { const r = await axios.get(`${API}/institutions/my/analytics`, { headers: getAuthHeaders() }); setStats(r.data); } catch {} finally { setSection('stats', false); } };
+    const fetchPending = async () => { setSection('pending', true); try { const r = await axios.get(`${API}/institutions/my/pending`, { headers: getAuthHeaders() }); setPendingDocs(r.data); } catch {} finally { setSection('pending', false); } };
+    const fetchAllDocs = async () => { setSection('docs', true); try { const r = await axios.get(`${API}/institutions/my/documents`, { headers: getAuthHeaders() }); setAllDocs(r.data); } catch {} finally { setSection('docs', false); } };
+    const fetchMembers = async () => { setSection('members', true); try { const r = await axios.get(`${API}/institutions/my/members`, { headers: getAuthHeaders() }); setMembers(r.data); } catch {} finally { setSection('members', false); } };
+    const fetchAffRequests = async () => { setSection('aff', true); try { const r = await axios.get(`${API}/institutions/my/affiliation-requests`, { headers: getAuthHeaders() }); setAffReqs(r.data); } catch {} finally { setSection('aff', false); } };
     const fetchProfile = async () => {
+        setSection('profile', true);
         try {
             const r = await axios.get(`${API}/institutions/my/profile`, { headers: getAuthHeaders() });
             setProfile(r.data);
             setEditDesc(r.data.description || '');
             setEditLoc(r.data.location || '');
             setEditWeb(r.data.website || '');
-        } catch {}
+        } catch {} finally { setSection('profile', false); }
     };
 
     const handleDocAction = async (docId, status) => {
@@ -235,19 +240,16 @@ function InstitutionDashboard() {
     );
 
     // --- CONTENT VIEWS ---
-    const KpiCard = ({ title, value, subtitle, trendUp, icon: Icon, color = '#38bdf8' }) => (
-        <div style={{ background: '#fff', borderRadius: 8, padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+    const KpiCard = ({ title, value, subtitle, icon: Icon, color = '#38bdf8', loading = false }) => (
+        <div style={{ background: '#fff', borderRadius: 8, padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', position: 'relative', overflow: 'hidden' }}>
+            {loading && <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 3, background: color, opacity: 0.5, animation: 'loading-bar 1.5s infinite linear' }} />}
             <div style={{ width: 56, height: 56, borderRadius: 12, background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Icon size={28} color={color} />
             </div>
             <div>
                 <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</div>
-                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0f172a', margin: '0.2rem 0' }}>{value}</div>
-                {subtitle && (
-                    <div style={{ fontSize: '0.75rem', fontWeight: 500, color: trendUp ? '#22c55e' : '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        {trendUp ? <TrendingUp size={12}/> : <TrendingDown size={12}/>} {subtitle}
-                    </div>
-                )}
+                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0f172a', margin: '0.2rem 0', opacity: loading ? 0.4 : 1, transition: 'opacity 0.2s' }}>{value}</div>
+                {subtitle && <div style={{ fontSize: '0.75rem', fontWeight: 500, color: '#64748b' }}>{subtitle}</div>}
             </div>
         </div>
     );
@@ -268,10 +270,10 @@ function InstitutionDashboard() {
                 
                 {/* KPIs */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
-                    <KpiCard title="Total Publications" value={approvedCount} subtitle="▲ 5% this month" trendUp={true} icon={FileText} color="#0284c7" />
-                    <KpiCard title="Pending Verifications" value={pendingDocs.length + affReqs.length} subtitle="Needs attention" trendUp={false} icon={CheckSquare} color="#f59e0b" />
-                    <KpiCard title="Total Downloads" value={stats?.total_downloads || 0} subtitle="▲ 8% this month" trendUp={true} icon={Download} color="#8b5cf6" />
-                    <KpiCard title="Active Researchers" value={members.length} subtitle="▲ +4 today" trendUp={true} icon={Users} color="#10b981" />
+                    <KpiCard title="Total Publications" value={approvedCount} subtitle="Approved papers" icon={FileText} color="#0284c7" loading={dataLoading.docs} />
+                    <KpiCard title="Pending Verifications" value={pendingDocs.length + affReqs.length} subtitle="Needs attention" icon={CheckSquare} color="#f59e0b" loading={dataLoading.pending || dataLoading.aff} />
+                    <KpiCard title="Total Downloads" value={stats?.total_downloads || 0} subtitle="Across all papers" icon={Download} color="#8b5cf6" loading={dataLoading.stats} />
+                    <KpiCard title="Active Researchers" value={members.length} subtitle="Verified members" icon={Users} color="#10b981" loading={dataLoading.members} />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem', alignItems: 'start' }}>
@@ -514,6 +516,164 @@ function InstitutionDashboard() {
         </div>
     );
 
+    const renderResearchers = () => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Institution Researchers</h2>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div style={{ position: 'relative' }}>
+                        <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: 12, top: 10 }} />
+                        <input 
+                            type="text" 
+                            placeholder="Search researchers..." 
+                            style={{ padding: '8px 12px 8px 36px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: '0.85rem' }}
+                            value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                        <tr>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Name</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Email</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Role</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Joined Date</th>
+                            <th style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {members.filter(m => m.name?.toLowerCase().includes(searchQuery.toLowerCase()) || m.email?.toLowerCase().includes(searchQuery.toLowerCase())).map(m => (
+                            <tr key={m.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.9rem', fontWeight: 600, color: '#0f172a' }}>{m.name}</td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{m.email}</td>
+                                <td style={{ padding: '1rem 1.5rem' }}>
+                                    <span style={{ background: '#f1f5f9', color: '#475569', padding: '0.2rem 0.6rem', borderRadius: 999, fontSize: '0.7rem', fontWeight: 600 }}>{m.role?.toUpperCase()}</span>
+                                </td>
+                                <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{m.created_at ? new Date(m.created_at).toLocaleDateString() : 'N/A'}</td>
+                                <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
+                                    <button className="btn btn-ghost" style={{ fontSize: '0.8rem' }}>Manage</button>
+                                </td>
+                            </tr>
+                        ))}
+                        {members.length === 0 && (
+                            <tr><td colSpan="5" style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>No researchers found.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+
+    const renderAnalytics = () => {
+        const pieData = [
+            { name: 'Approved', value: allDocs.filter(d => d.status === 'approved').length },
+            { name: 'Pending', value: allDocs.filter(d => d.status === 'pending').length },
+            { name: 'Rejected', value: allDocs.filter(d => d.status === 'rejected').length },
+        ].filter(d => d.value > 0);
+
+        const PIE_COLORS = ['#0ea5e9', '#f59e0b', '#ef4444'];
+
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Deep Analytics</h2>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
+                    {/* Publication Distribution */}
+                    <div style={{ background: '#fff', borderRadius: 12, padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', marginBottom: '1.5rem' }}>Publication Status</h3>
+                        <div style={{ height: 250 }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                                        {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
+                                    </Pie>
+                                    <RechartsTooltip />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', marginTop: '1rem' }}>
+                            {pieData.map((d, i) => (
+                                <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: PIE_COLORS[i] }} />
+                                    <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>{d.name}: {d.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Engagement Overview */}
+                    <div style={{ background: '#fff', borderRadius: 12, padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', marginBottom: '1.5rem' }}>Engagement Metrics</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            {[
+                                { label: 'Total Downloads', value: stats?.total_downloads || 0, icon: Download, color: '#8b5cf6' },
+                                { label: 'Total Views', value: stats?.total_views || 0, icon: Eye, color: '#0ea5e9' },
+                                { label: 'Avg. Per Paper', value: ((stats?.total_downloads || 0) / (allDocs.length || 1)).toFixed(1), icon: BarChart2, color: '#10b981' },
+                            ].map((item, idx) => (
+                                <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', background: '#f8fafc', borderRadius: 8 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                        <div style={{ width: 40, height: 40, borderRadius: 8, background: `${item.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <item.icon size={20} color={item.color} />
+                                        </div>
+                                        <span style={{ fontWeight: 600, color: '#475569' }}>{item.label}</span>
+                                    </div>
+                                    <span style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a' }}>{item.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div style={{ background: '#fff', borderRadius: 12, padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', marginBottom: '1.5rem' }}>Top Researchers by Publication</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
+                        {members.slice(0, 4).map((m, i) => (
+                            <div key={m.id} style={{ padding: '1rem', border: '1px solid #e2e8f0', borderRadius: 8, textAlign: 'center' }}>
+                                <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#e0f2fe', color: '#0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.75rem', fontWeight: 800 }}>{m.name?.[0]}</div>
+                                <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 2 }}>{m.name}</div>
+                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Researcher</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderSettings = () => (
+        <div style={{ maxWidth: 600, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Dashboard Settings</h2>
+            <div style={{ background: '#fff', borderRadius: 8, padding: '2rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                <div>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '1rem' }}>Notification Preferences</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                            <input type="checkbox" defaultChecked style={{ width: 18, height: 18 }} />
+                            <span style={{ fontSize: '0.9rem', color: '#334155' }}>Email me for new document verifications</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                            <input type="checkbox" defaultChecked style={{ width: 18, height: 18 }} />
+                            <span style={{ fontSize: '0.9rem', color: '#334155' }}>Email me for new affiliation requests</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                            <input type="checkbox" style={{ width: 18, height: 18 }} />
+                            <span style={{ fontSize: '0.9rem', color: '#334155' }}>Monthly institutional analytics report</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '2rem' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '1rem', color: '#ef4444' }}>Danger Zone</h3>
+                    <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1rem' }}>Once you delete an institutional account, there is no going back. Please be certain.</p>
+                    <button style={{ background: '#fff', color: '#ef4444', border: '1px solid #ef4444', padding: '0.6rem 1.2rem', borderRadius: 6, fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}>Delete Institution Account</button>
+                </div>
+            </div>
+        </div>
+    );
+
     const renderDefault = () => (
         <div style={{ padding: '3rem', textAlign: 'center', background: '#fff', borderRadius: 8, color: '#64748b' }}>
             <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.5rem' }}>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Dashboard</h3>
@@ -540,11 +700,17 @@ function InstitutionDashboard() {
                     {activeTab === 'verifications' && renderVerifications()}
                     {activeTab === 'profile' && renderProfile()}
                     {activeTab === 'documents' && renderDocuments()}
-                    {['researchers', 'analytics', 'settings'].includes(activeTab) && renderDefault()}
+                    {activeTab === 'researchers' && renderResearchers()}
+                    {activeTab === 'analytics' && renderAnalytics()}
+                    {activeTab === 'settings' && renderSettings()}
                 </main>
             </div>
             <style dangerouslySetInnerHTML={{__html: `
                 @keyframes dropIn { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+                @keyframes loading-bar {
+                    0% { transform: translateX(-100%); }
+                    100% { transform: translateX(100%); }
+                }
             `}} />
         </div>
     );
