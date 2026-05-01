@@ -8,9 +8,10 @@ ADD COLUMN IF NOT EXISTS occupation TEXT,
 ADD COLUMN IF NOT EXISTS photo_url TEXT,
 ADD COLUMN IF NOT EXISTS research_interests TEXT;
 
--- 2. Add is_external_match to "documents" table
+-- 2. Add is_external_match and author_names to "documents" table
 ALTER TABLE public.documents
-ADD COLUMN IF NOT EXISTS is_external_match BOOLEAN DEFAULT FALSE;
+ADD COLUMN IF NOT EXISTS is_external_match BOOLEAN DEFAULT FALSE,
+ADD COLUMN IF NOT EXISTS author_names TEXT;
 
 -- 3. (Optional) Create moderation_logs table if you are tracking logs in Cloud now
 CREATE TABLE IF NOT EXISTS public.moderation_logs (

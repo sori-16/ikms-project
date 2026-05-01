@@ -56,6 +56,7 @@ function InstitutionDashboard() {
     const [bulkUploading, setBulkUploading] = useState(false);
     const [bulkResult, setBulkResult] = useState(null);
     const [showBulkUploader, setShowBulkUploader] = useState(false);
+    const [selectedUserRequest, setSelectedUserRequest] = useState(null);
 
     const navigate = useNavigate();
 
@@ -103,7 +104,7 @@ function InstitutionDashboard() {
     const handleDocAction = async (docId, status) => {
         try {
             await axios.post(`${API}/documents/${docId}/institutional-verify`, { status }, { headers: getAuthHeaders() });
-            showToast(`Document ${status === 'verified' ? 'approved' : 'rejected'}.`);
+            showToast(`Document ${status === 'approved' ? 'verified & approved' : 'rejected'}.`);
             fetchPending(); fetchAllDocs(); fetchStats();
         } catch (err) { showToast(err.response?.data?.error || 'Failed to update document.', 'error'); }
     };
@@ -299,6 +300,7 @@ function InstitutionDashboard() {
 
                     {/* Quick Actions & Charts */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        {/* 
                         <div style={{ display: 'flex', gap: '1rem' }}>
                             <button onClick={() => setActiveTab('verifications')} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center', fontWeight: 600, border: '1px solid #cbd5e1' }}><CheckCircle size={16}/> Review Pending</button>
                             <button onClick={() => setActiveTab('documents')} className="btn btn-primary" style={{ flex: 1, justifyContent: 'center', fontWeight: 600, background: '#0f2b3d' }}><UploadCloud size={16}/> Manage Docs</button>
@@ -334,6 +336,7 @@ function InstitutionDashboard() {
                                 </div>
                             </div>
                         </div>
+                        */}
                     </div>
                 </div>
             </div>
@@ -362,6 +365,7 @@ function InstitutionDashboard() {
                                 <td style={{ padding: '1rem 1.5rem', fontSize: '0.85rem', color: '#64748b' }}>{new Date(req.created_at).toLocaleDateString()}</td>
                                 <td style={{ padding: '1rem 1.5rem' }}><StatusBadge status="pending" /></td>
                                 <td style={{ padding: '1rem 1.5rem', textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                    <button onClick={() => setSelectedUserRequest(req)} style={{ background: '#f1f5f9', color: '#0f172a', border: 'none', padding: '0.4rem 0.8rem', borderRadius: 4, fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}><Eye size={14}/> View Profile</button>
                                     <button onClick={() => handleAffAction(req.id, 'approve')} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '0.4rem 0.8rem', borderRadius: 4, fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>Verify</button>
                                     <button onClick={() => handleAffAction(req.id, 'reject')} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '0.4rem 0.8rem', borderRadius: 4, fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>Reject</button>
                                 </td>
@@ -704,6 +708,38 @@ function InstitutionDashboard() {
                     {activeTab === 'analytics' && renderAnalytics()}
                     {activeTab === 'settings' && renderSettings()}
                 </main>
+                
+                {selectedUserRequest && (
+                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                        <div style={{ background: '#fff', borderRadius: 12, padding: '2rem', width: '90%', maxWidth: 500, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#0f172a' }}>Researcher Profile</h3>
+                                <button onClick={() => setSelectedUserRequest(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.5rem', color: '#64748b' }}>×</button>
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#f1f5f9', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {selectedUserRequest.photo_url ? <img src={selectedUserRequest.photo_url} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Users size={32} color="#94a3b8" />}
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>{selectedUserRequest.user_name}</div>
+                                    <div style={{ fontSize: '0.9rem', color: '#64748b' }}>{selectedUserRequest.user_email}</div>
+                                </div>
+                            </div>
+                            <div style={{ marginBottom: '1rem' }}>
+                                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: '0.2rem' }}>Occupation / Role</label>
+                                <div style={{ fontSize: '0.95rem', color: '#0f172a', background: '#f8fafc', padding: '0.75rem', borderRadius: 6 }}>{selectedUserRequest.occupation || 'Not specified'}</div>
+                            </div>
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: '0.2rem' }}>Research Interests</label>
+                                <div style={{ fontSize: '0.95rem', color: '#0f172a', background: '#f8fafc', padding: '0.75rem', borderRadius: 6, minHeight: 60 }}>{selectedUserRequest.research_interests || 'Not specified'}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                                <button onClick={() => { handleAffAction(selectedUserRequest.id, 'reject'); setSelectedUserRequest(null); }} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '0.6rem 1.2rem', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>Reject</button>
+                                <button onClick={() => { handleAffAction(selectedUserRequest.id, 'approve'); setSelectedUserRequest(null); }} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '0.6rem 1.2rem', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>Verify & Approve</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
             <style dangerouslySetInnerHTML={{__html: `
                 @keyframes dropIn { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }

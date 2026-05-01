@@ -210,19 +210,23 @@ const DocumentDetail = () => {
                     <h1 className="doc-title">{doc.title}</h1>
 
                     {/* Authors */}
-                    {doc.authors && doc.authors.length > 0 && (
-                        <div className="doc-authors">
-                            <span className="doc-authors-label">Research Team</span>
-                            <div className="doc-authors-list">
-                                {doc.authors.map(auth => (
+                    <div className="doc-authors">
+                        <span className="doc-authors-label">Research Team</span>
+                        <div className="doc-authors-list">
+                            {doc.authors && doc.authors.length > 0 ? (
+                                doc.authors.map(auth => (
                                     <Link key={auth.id} to={`/author/${auth.id}`} className="author-pill">
                                         <span className="author-avatar">{auth.name[0]}</span>
                                         {auth.name}
                                     </Link>
-                                ))}
-                            </div>
+                                ))
+                            ) : (
+                                <span style={{ fontSize: '0.95rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                                    {doc.author_names || 'Independent Researcher'}
+                                </span>
+                            )}
                         </div>
-                    )}
+                    </div>
 
                     {/* Metrics */}
                     <div className="doc-metrics">
@@ -234,10 +238,12 @@ const DocumentDetail = () => {
                             <span className="doc-metric-value">{doc.download_count || 0}</span>
                             <span className="doc-metric-label">Downloads</span>
                         </div>
+                        {/* 
                         <div className="doc-metric">
                             <span className="doc-metric-value">{doc.like_count || 0}</span>
                             <span className="doc-metric-label">Endorsements</span>
                         </div>
+                        */}
                         <div className="doc-metric">
                             <span className="doc-metric-value">{new Date(doc.publication_date || doc.upload_date).getFullYear()}</span>
                             <span className="doc-metric-label">Year</span>
@@ -249,9 +255,11 @@ const DocumentDetail = () => {
                         <button onClick={handleDownload} className="btn btn-success btn-lg">
                             <Download size={20} /> Download PDF
                         </button>
+                        {/* 
                         <button onClick={handleLike} className="btn btn-lg" style={{ background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c', border: '1px solid rgba(231, 76, 60, 0.2)' }}>
                             <Heart size={20} fill={doc.user_has_liked ? '#e74c3c' : 'none'} /> Endorse
                         </button>
+                        */}
                         <button onClick={handleBookmark} className="btn btn-secondary btn-lg">
                             <Bookmark size={20} /> Save Research
                         </button>
@@ -281,31 +289,7 @@ const DocumentDetail = () => {
                         )}
                     </div>
 
-                    <div className="doc-secondary-actions" style={{ marginTop: '20px', padding: '0 2rem' }}>
-                        <button onClick={handleSummarize} className="btn btn-ghost" style={{ color: 'var(--primary)', border: '1px solid rgba(30, 58, 95, 0.2)', padding: '0.5rem 1.5rem' }} disabled={loadingSummary}>
-                            <Languages size={18} /> {loadingSummary ? 'Generating...' : 'Translate Abstract to Local Languages (Amharic/Oromiffa)'}
-                        </button>
-                    </div>
-
-                    {localSummary && (
-                        <div style={{ padding: '0 2rem 2rem 2rem' }}>
-                            <div className="card" style={{ background: 'rgba(241, 196, 15, 0.05)', border: '1px solid rgba(241, 196, 15, 0.2)', padding: '1.5rem' }}>
-                                <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                    <Languages size={20} className="text-gold" /> የጥናት ማጠቃለያ (AI Summaries)
-                                </h3>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                                    <div>
-                                        <h4 style={{ fontSize: '0.9rem', color: 'var(--primary)', marginBottom: '0.5rem' }}>አማርኛ (Amharic)</h4>
-                                        <p style={{ fontSize: '0.95rem', lineHeight: '1.6', color: 'var(--text-secondary)' }}>{localSummary.amharic}</p>
-                                    </div>
-                                    <div style={{ borderLeft: '1px solid rgba(0,0,0,0.1)', paddingLeft: '2rem' }}>
-                                        <h4 style={{ fontSize: '0.9rem', color: 'var(--primary)', marginBottom: '0.5rem' }}>Afaan Oromoo</h4>
-                                        <p style={{ fontSize: '0.95rem', lineHeight: '1.6', color: 'var(--text-secondary)' }}>{localSummary.oromiffa}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                    {/* Translation removed per request */}
 
                     <hr className="divider" />
 
@@ -328,62 +312,12 @@ const DocumentDetail = () => {
                     )}
 
                     {/* ── Citation Export ── */}
+                    {/* Citation section hidden per request */}
+                    {/* 
                     {citations && (
-                        <div className="doc-section">
-                            <h2 className="doc-section-title">
-                                <Copy size={18} /> Cite This Research
-                            </h2>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-                                Select a citation format and copy to your bibliography.
-                            </p>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                                {[
-                                    { key: 'apa', label: 'APA', color: '#4f46e5' },
-                                    { key: 'mla', label: 'MLA', color: '#0891b2' },
-                                    { key: 'bibtex', label: 'BibTeX', color: '#059669' }
-                                ].map(({ key, label, color }) => (
-                                    <div key={key} style={{
-                                        background: 'var(--surface)',
-                                        border: '1px solid var(--border)',
-                                        borderRadius: 'var(--radius)',
-                                        overflow: 'hidden'
-                                    }}>
-                                        <div style={{
-                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                            padding: '0.6rem 1rem',
-                                            background: `${color}12`,
-                                            borderBottom: '1px solid var(--border)'
-                                        }}>
-                                            <span style={{ fontWeight: 700, fontSize: '0.8rem', color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                                {label}
-                                            </span>
-                                            <button
-                                                onClick={() => copyToClipboard(citations[key], key)}
-                                                style={{
-                                                    display: 'flex', alignItems: 'center', gap: '0.4rem',
-                                                    background: copiedFormat === key ? '#22c55e' : color,
-                                                    color: '#fff', border: 'none', borderRadius: '6px',
-                                                    padding: '0.3rem 0.85rem', fontSize: '0.8rem',
-                                                    cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s'
-                                                }}
-                                            >
-                                                {copiedFormat === key ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy</>}
-                                            </button>
-                                        </div>
-                                        <pre style={{
-                                            margin: 0, padding: '0.85rem 1rem',
-                                            fontSize: '0.82rem', lineHeight: 1.6,
-                                            color: 'var(--text-secondary)',
-                                            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                                            fontFamily: key === 'bibtex' ? 'monospace' : 'inherit'
-                                        }}>
-                                            {citations[key]}
-                                        </pre>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                        ...
                     )}
+                    */}
                 </div>
 
                 {/* ── Recommendations ── */}

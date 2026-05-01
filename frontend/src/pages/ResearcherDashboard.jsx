@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
-import { getUser, logout, getAuthHeaders } from '../utils/auth';
+import { getUser, setUser as setAuthUser, logout, getAuthHeaders } from '../utils/auth';
 import { Bell, Trash2, Search, UploadCloud, BarChart2, BookOpen, AlertCircle, RefreshCw, Briefcase, ShieldCheck, Database, X } from 'lucide-react';
 import './Dashboard.css';
 
@@ -14,6 +14,7 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function ResearcherDashboard() {
     const [user, setUser] = useState(null);
+    const [pendingAffReq, setPendingAffReq] = useState(null);
     const [activeTab, setActiveTab] = useState('overview');
     const [file, setFile] = useState(null);
     const [uploading, setUploading] = useState(false);
@@ -40,14 +41,37 @@ function ResearcherDashboard() {
         const currentUser = getUser();
         if (!currentUser) { navigate('/login'); return; }
         setUser(currentUser);
+        
+        // Refresh user profile to get latest verification status
+        axios.get(`${API}/users/me`, { headers: getAuthHeaders() })
+            .then(res => {
+                setUser(res.data);
+                setAuthUser(res.data);
+                if (!res.data.is_verified) {
+                    fetchPendingReq();
+                    fetchInstitutions();
+                }
+            })
+            .catch(() => {
+                if (!currentUser.is_verified) fetchInstitutions();
+            });
+
         fetchMyDocuments();
         fetchSavedSearches();
         fetchRealTimeAlerts();
         fetchStats();
         fetchCollabInterests();
         fetchNotifications();
-        if (!currentUser.is_verified) fetchInstitutions();
     }, [navigate]);
+
+    const fetchPendingReq = async () => {
+        try {
+            const res = await axios.get(`${API}/profile/affiliation-request`, { headers: getAuthHeaders() });
+            if (res.data.status === 'pending') {
+                setPendingAffReq(res.data);
+            }
+        } catch {}
+    };
 
     const fetchNotifications = async () => {
         try {
@@ -279,7 +303,16 @@ function ResearcherDashboard() {
                 <div className="dash-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                     <div>
                         <h1 className="dash-title" style={{ marginBottom: '0.25rem' }}>Researcher Dashboard</h1>
-                        <p className="dash-subtitle" style={{ margin: 0 }}>Welcome back, {user.name}! <span style={{ opacity: 0.6, fontSize: '0.85rem' }}>— የተመራማሪ ዳሽቦርድ</span></p>
+                        <p className="dash-subtitle" style={{ margin: 0 }}>
+                            Welcome back, {user.name}! 
+                            {user.institution_name && (
+                                <span style={{ marginLeft: '8px', padding: '2px 8px', background: 'rgba(var(--primary-rgb), 0.1)', color: 'var(--primary)', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                                    <Briefcase size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
+                                    {user.institution_name}
+                                </span>
+                            )}
+                            <span style={{ opacity: 0.6, fontSize: '0.85rem', marginLeft: '12px' }}>— የተመራማሪ ዳሽቦርድ</span>
+                        </p>
                     </div>
                     <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                         {/* Notification Bell */}
@@ -339,7 +372,6 @@ function ResearcherDashboard() {
                                 </div>
                             )}
                         </div>
-                        <button onClick={logout} className="btn btn-ghost btn-sm">Logout</button>
                     </div>
                 </div>
 
@@ -383,57 +415,6 @@ function ResearcherDashboard() {
                                         <div className="stat-label">Active Alerts</div>
                                     </div>
                                 </div>
-                                {/* Impact Per-Paper Breakdown */}
-                                {myDocuments.length > 0 && (
-                                    <div className="card" style={{ marginTop: '1.5rem', padding: '1.5rem' }}>
-                                        <h3 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            📊 My Research Impact
-                                        </h3>
-                                        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-                                            Downloads & views for each of your approved papers
-                                        </p>
-                                        {myDocuments.filter(d => d.status === 'approved').length === 0 ? (
-                                            <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', padding: '1rem', textAlign: 'center' }}>
-                                                No approved papers yet. Submit a paper to see your impact here!
-                                            </div>
-                                        ) : (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                                {(() => {
-                                                    const approved = myDocuments.filter(d => d.status === 'approved');
-                                                    const maxVal = Math.max(...approved.map(d => Math.max(d.download_count || 0, d.view_count || 0)), 1);
-                                                    return approved.map(doc => (
-                                                        <div key={doc.id}>
-                                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
-                                                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                    {doc.title}
-                                                                </span>
-                                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                                                    {doc.download_count || 0} dl · {doc.view_count || 0} views
-                                                                </span>
-                                                            </div>
-                                                            {/* Downloads bar */}
-                                                            <div style={{ height: 8, background: 'var(--surface)', borderRadius: 99, marginBottom: '0.3rem', overflow: 'hidden' }}>
-                                                                <div style={{ height: '100%', width: `${((doc.download_count || 0) / maxVal) * 100}%`, background: 'var(--success)', borderRadius: 99, transition: 'width 0.6s ease' }} />
-                                                            </div>
-                                                            {/* Views bar */}
-                                                            <div style={{ height: 6, background: 'var(--surface)', borderRadius: 99, overflow: 'hidden' }}>
-                                                                <div style={{ height: '100%', width: `${((doc.view_count || 0) / maxVal) * 100}%`, background: 'var(--primary)', borderRadius: 99, opacity: 0.6, transition: 'width 0.6s ease' }} />
-                                                            </div>
-                                                        </div>
-                                                    ));
-                                                })()}
-                                                <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.25rem' }}>
-                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                                        <span style={{ display: 'inline-block', width: 12, height: 8, background: 'var(--success)', borderRadius: 2 }} /> Downloads
-                                                    </span>
-                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                                        <span style={{ display: 'inline-block', width: 12, height: 8, background: 'var(--primary)', borderRadius: 2, opacity: 0.6 }} /> Views
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
                                 <div className="dash-quick-actions card" style={{ marginTop: '1.5rem', padding: '1.5rem' }}>
                                     <h3 style={{ marginBottom: '1rem' }}>Quick Actions</h3>
                                     <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -457,14 +438,26 @@ function ResearcherDashboard() {
                                 <p style={{ color: 'var(--text-secondary)', maxWidth: '550px', margin: '0 auto 2.5rem auto', lineHeight: 1.6, fontSize: '0.95rem' }}>
                                     Your account is currently in <strong>Reader Mode</strong>. To maintain the integrity of the Ethiopian Indigenous Knowledge database, we require a brief verification process before publishing.
                                 </p>
-                                <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-                                    <Link to="/profile-setup" className="btn btn-primary" style={{ padding: '0.75rem 1.5rem', fontWeight: 600 }}>
-                                        Setup Profile & Request Access
-                                    </Link>
-                                    <Link to="/" className="btn btn-secondary" style={{ padding: '0.75rem 1.5rem' }}>
-                                        Explore Repository
-                                    </Link>
-                                </div>
+                                
+                                {pendingAffReq ? (
+                                    <div style={{ background: '#fef3c7', padding: '1rem', borderRadius: '8px', border: '1px solid #fcd34d', color: '#92400e', display: 'inline-block', marginBottom: '1rem' }}>
+                                        <h4 style={{ margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            <AlertCircle size={18} /> Request Pending
+                                        </h4>
+                                        <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                                            Your affiliation request to <strong>{pendingAffReq.institution_name}</strong> has been sent and is pending admin approval.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+                                        <Link to="/profile-setup" className="btn btn-primary" style={{ padding: '0.75rem 1.5rem', fontWeight: 600 }}>
+                                            Setup Profile & Request Access
+                                        </Link>
+                                        <Link to="/" className="btn btn-secondary" style={{ padding: '0.75rem 1.5rem' }}>
+                                            Explore Repository
+                                        </Link>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
