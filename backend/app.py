@@ -44,7 +44,15 @@ def sync_authors_to_doc(doc_id, author_names):
         for name in author_names:
             author = Author.query.filter_by(name=name).first()
             if not author:
-                author = Author(name=name, normalized_name=name.lower().strip())
+                # Try to find a user with this name to link the account automatically
+                from models import User
+                matched_user = User.query.filter(User.name.ilike(name.strip())).first()
+                
+                author = Author(
+                    name=name, 
+                    normalized_name=name.lower().strip(),
+                    user_id=matched_user.id if matched_user else None
+                )
                 db.session.add(author)
                 db.session.flush() # Get ID
             
@@ -237,61 +245,70 @@ def create_app():
     @app.route('/login', methods=['POST'])
     def login():
         data = request.get_json()
-        
-        if not data or not data.get('email') or not data.get('password'):
-            return jsonify({"error": "Missing email or password"}), 400
-        
-        # --- OFFLINE MODE BYPASS ---
+        email = data.get('email', '').strip()
+        password = data.get('password', '')
+
+        # OFFLINE_MODE logic: Bypass Supabase Auth
         if os.environ.get('OFFLINE_MODE') == 'true':
-            email = data.get('email')
             user = User.query.filter_by(email=email).first()
             if user:
-                role_str = user.role.value if hasattr(user.role, 'value') else str(user.role)
                 return jsonify({
-                    "message": "Offline login successful",
                     "user": {
                         "id": user.id,
                         "name": user.name,
                         "email": user.email,
-                        "role": role_str,
-                        "is_verified": user.is_verified
+                        "role": user.role.value,
+                        "is_verified": user.is_verified,
+                        "institution_id": user.institution_id
                     },
-                    "token": user.id 
+                    "token": user.id,
+                    "access_token": user.id 
                 }), 200
-            else:
-                return jsonify({"error": "User not found in local demo database"}), 401
-        # ---------------------------
-        
+            return jsonify({"error": "Invalid email or password (Local)"}), 401
+
         try:
-            # Sign in with Supabase Auth
             auth_response = supabase.auth.sign_in_with_password({
-                "email": data['email'],
-                "password": data['password']
+                "email": email,
+                "password": password
             })
             
             if not auth_response.user:
                 return jsonify({"error": "Invalid login credentials"}), 401
 
-            # Fetch profile data from cloud table using email
-            profile = supabase.table("users").select("*").eq("email", auth_response.user.email).single().execute()
-            
-            user_info = {
-                "id": auth_response.user.id,
-                "name": profile.data.get('name') if profile.data else auth_response.user.email,
-                "email": auth_response.user.email,
-                "role": profile.data.get('role', 'researcher') if profile.data else 'researcher',
-                "is_verified": profile.data.get('is_verified', False) if profile.data else False
-            }
+            # Fetch profile data from local DB or cloud
+            user = User.query.get(auth_response.user.id)
+            if not user:
+                # Create user locally if they exist in Supabase but not local DB (sync)
+                profile = supabase.table("users").select("*").eq("id", auth_response.user.id).single().execute()
+                if profile.data:
+                    user = User(
+                        id=profile.data['id'],
+                        name=profile.data['name'],
+                        email=profile.data['email'],
+                        role=UserRole(profile.data.get('role', 'researcher')),
+                        institution_id=profile.data.get('institution_id'),
+                        is_verified=profile.data.get('is_verified', False)
+                    )
+                    db.session.add(user)
+                    db.session.commit()
+                else:
+                    return jsonify({"error": "User profile not found"}), 404
 
             return jsonify({
                 "message": "Login successful",
-                "user": user_info,
-                "session": auth_response.session.model_dump() if auth_response.session else None,
-                "token": auth_response.session.access_token if auth_response.session else None
+                "user": {
+                    "id": user.id,
+                    "name": user.name,
+                    "email": user.email,
+                    "role": user.role.value,
+                    "is_verified": user.is_verified,
+                    "institution_id": user.institution_id
+                },
+                "token": auth_response.session.access_token if auth_response.session else None,
+                "access_token": auth_response.session.access_token if auth_response.session else None
             }), 200
-
         except Exception as e:
-            return jsonify({"error": "Invalid email or password"}), 401
+            return jsonify({"error": str(e)}), 401
 
     @app.route('/profile/setup', methods=['POST'])
     @login_required
@@ -365,12 +382,208 @@ def create_app():
                     db.session.add(new_req)
             
             db.session.commit()
-            return jsonify({"message": "Profile updated successfully", "photo_url": photo_url}), 200
+            
+            # Return updated user info for frontend sync
+            updated_user = {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "role": user.role.value,
+                "is_verified": user.is_verified,
+                "institution_id": user.institution_id
+            }
+            return jsonify({
+                "message": "Profile updated successfully", 
+                "photo_url": photo_url,
+                "user": updated_user
+            }), 200
             
         except Exception as e:
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
+    @app.route('/profile/affiliation-request', methods=['GET'])
+    @login_required
+    def get_my_affiliation_request():
+        """Check if the user has a pending affiliation request"""
+        from models import AffiliationRequest
+        req = AffiliationRequest.query.filter_by(user_id=request.user_id).order_by(AffiliationRequest.created_at.desc()).first()
+        if not req:
+            return jsonify({"status": "none"}), 200
+        inst_name = req.institution.name if req.institution else "Unknown Institution"
+        return jsonify({
+            "status": req.status,
+            "institution_name": inst_name
+        }), 200
+
+    @app.route('/users/me', methods=['GET'])
+    @login_required
+    def get_current_user():
+        user = User.query.get(request.user_id)
+        if not user:
+            # Fallback to Supabase
+            try:
+                res = supabase.table("users").select("*").eq("id", request.user_id).execute()
+                if res.data:
+                    u = res.data[0]
+                    return jsonify({
+                        "id": u['id'], "name": u['name'], "email": u['email'], 
+                        "role": u.get('role', 'researcher'), "is_verified": u.get('is_verified', False), 
+                        "institution_id": u.get('institution_id'),
+                        "institution_name": u.get('institution', {}).get('name') if isinstance(u.get('institution'), dict) else None
+                    }), 200
+            except: pass
+            return jsonify({"error": "User not found"}), 404
+        return jsonify({
+            "id": user.id, "name": user.name, "email": user.email, 
+            "role": user.role.value if hasattr(user.role, 'value') else str(user.role), 
+            "is_verified": user.is_verified, "institution_id": user.institution_id,
+            "institution_name": user.institution.name if user.institution else None,
+            "photo_url": user.photo_url
+        }), 200
+
+    @app.route('/authors/me', methods=['GET'])
+    @login_required
+    def get_my_author_profile():
+        author = Author.query.filter_by(user_id=request.user_id).first()
+        if not author:
+            # Create a shell author profile if not exists
+            user = User.query.get(request.user_id)
+            if user:
+                author = Author(name=user.name, user_id=user.id, email=user.email, normalized_name=user.name.lower())
+                db.session.add(author)
+                db.session.commit()
+            else:
+                return jsonify({"error": "User not found"}), 404
+        return jsonify({
+            "id": author.id,
+            "name": author.name,
+            "collab_interests": author.collab_interests or '',
+            "institution": author.institution.name if author.institution else "None"
+        }), 200
+
+    @app.route('/authors/me/collaboration', methods=['PUT'])
+    @login_required
+    def update_my_collaboration():
+        data = request.get_json()
+        interests = data.get('interests')
+        author = Author.query.filter_by(user_id=request.user_id).first()
+        if not author:
+            return jsonify({"error": "Profile not found"}), 404
+        author.collab_interests = interests
+        db.session.commit()
+        return jsonify({"success": True}), 200
+
+    @app.route('/researcher/stats', methods=['GET'])
+    @login_required
+    def get_researcher_dashboard_stats():
+        docs = Document.query.filter_by(uploader_id=request.user_id).all()
+        return jsonify({
+            "document_count": len(docs),
+            "total_downloads": sum(d.download_count or 0 for d in docs),
+            "total_views": sum(d.view_count or 0 for d in docs),
+            "h_index": 0
+        }), 200
+
+    @app.route('/researcher/documents', methods=['GET'])
+    @login_required
+    def get_my_docs():
+        docs = Document.query.filter_by(uploader_id=request.user_id).order_by(Document.upload_date.desc()).all()
+        return jsonify([{
+            "id": d.id,
+            "title": d.title,
+            "status": d.status.value if hasattr(d.status, 'value') else str(d.status),
+            "upload_date": d.upload_date.isoformat(),
+            "download_count": d.download_count or 0,
+            "view_count": d.view_count or 0
+        } for d in docs]), 200
+
+    @app.route('/saved-searches', methods=['POST'])
+    @login_required
+    def save_new_search():
+        data = request.get_json()
+        query = data.get('query')
+        if not query: return jsonify({"error": "Search query is required"}), 400
+        new_save = SavedSearch(user_id=request.user_id, query=query)
+        db.session.add(new_save)
+        db.session.commit()
+        return jsonify({"message": "Search saved", "id": new_save.id}), 201
+
+    @app.route('/saved-searches', methods=['GET'])
+    @login_required
+    def list_saved_searches():
+        """Retrieve a user's saved searches with alert counts"""
+        saved = SavedSearch.query.filter_by(user_id=request.user_id).all()
+        results = []
+        from sqlalchemy import or_
+        for s in saved:
+            alert_count = Document.query.filter(
+                Document.status == DocumentStatus.approved,
+                Document.upload_date > s.last_checked_at,
+                or_(
+                    Document.title.ilike(f'%{s.query}%'),
+                    Document.abstract.ilike(f'%{s.query}%')
+                )
+            ).count()
+            results.append({
+                "id": s.id,
+                "query": s.query,
+                "created_at": s.created_at.isoformat(),
+                "alert_count": alert_count
+            })
+        return jsonify(results), 200
+
+    @app.route('/saved-searches/<int:sid>/clear-alerts', methods=['POST'])
+    @login_required
+    def clear_search_alerts(sid):
+        s = SavedSearch.query.filter_by(id=sid, user_id=request.user_id).first_or_404()
+        s.last_checked_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({"success": True}), 200
+
+    @app.route('/saved-searches/<int:sid>', methods=['DELETE'])
+    @login_required
+    def remove_saved_search(sid):
+        s = SavedSearch.query.filter_by(id=sid, user_id=request.user_id).first_or_404()
+        db.session.delete(s)
+        db.session.commit()
+        return jsonify({"success": True}), 200
+
+    @app.route('/saved-searches/alerts', methods=['GET'])
+    @login_required
+    def list_search_alerts():
+        from models import SearchAlert
+        alerts = SearchAlert.query.join(SavedSearch).filter(SavedSearch.user_id == request.user_id, SearchAlert.is_read == False).all()
+        return jsonify([{
+            "id": a.id,
+            "query": a.saved_search.query,
+            "doc_title": a.document.title if a.document else "Unknown",
+            "created_at": a.created_at.isoformat()
+        } for a in alerts]), 200
+
+    @app.route('/notifications', methods=['GET'])
+    @login_required
+    def list_my_notifications():
+        from models import Notification
+        notifs = Notification.query.filter_by(user_id=request.user_id).order_by(Notification.created_at.desc()).limit(50).all()
+        return jsonify([{
+            "id": n.id,
+            "message": n.message,
+            "type": n.type,
+            "read": n.read,
+            "created_at": n.created_at.isoformat()
+        } for n in notifs]), 200
+
+    @app.route('/notifications/<int:nid>/read', methods=['PUT'])
+    @login_required
+    def mark_read(nid):
+        from models import Notification
+        n = Notification.query.filter_by(id=nid, user_id=request.user_id).first()
+        if n:
+            n.read = True
+            db.session.commit()
+        return jsonify({"success": True}), 200
 
     @app.route('/upload', methods=['POST'])
     @login_required
@@ -482,6 +695,15 @@ def create_app():
                 
                 # 8. Mirror to local SQLite (optional cache)
                 try:
+                    # 9. Sync Authors
+                    extracted_authors = doc_full.get('authors', [])
+                    final_authors = extracted_authors.copy()
+                    
+                    # Always include the uploader's name as an author if not already present
+                    uploader_name = user_data.get('name') if user_data else None
+                    if uploader_name and uploader_name not in final_authors:
+                        final_authors.append(uploader_name)
+
                     new_doc = Document(
                         id=new_doc_id,
                         title=doc_full['title'],
@@ -489,30 +711,35 @@ def create_app():
                         file_size_bytes=file_size,
                         institution_id=final_inst_id,
                         uploader_id=request.user_id,
-                        status=DocumentStatus.PENDING,
+                        author_names=", ".join(final_authors),
+                        status=DocumentStatus.pending,
                         file_path=storage_path,
                         is_external_match=is_external_match
                     )
                     db.session.add(new_doc)
                     db.session.commit()
                     
-                    # 9. Sync Authors
-                    if doc_full['authors']:
-                        sync_authors_to_doc(new_doc_id, doc_full['authors'])
-                except: db.session.rollback()
+                    if final_authors:
+                        sync_authors_to_doc(new_doc_id, final_authors)
+                except Exception as e:
+                    print(f"Local sync error: {e}")
+                    db.session.rollback()
                 
                 # 8. Index to Elasticsearch
                 doc_body = {
-                    "title": filename,
-                    "abstract": raw_text[:500] if raw_text else "",
+                    "title": doc_full.get('title', filename),
+                    "abstract": doc_full.get('abstract', raw_text[:500] if raw_text else ""),
                     "full_text": cleaned_text,
                     "keywords": keywords,
                     "topics": topics,
-                    "upload_date": datetime.utcnow().isoformat()
+                    "institution_id": final_inst_id,
+                    "authors": final_authors,
+                    "upload_date": datetime.utcnow().isoformat(),
+                    "status": "approved" if user_data.get('role') in ['inst_admin', 'sys_admin'] else "pending"
                 }
                 
                 if es and es.ping():
-                    es.index(index=INDEX_NAME, document=doc_body)
+                    es.index(index=INDEX_NAME, id=str(new_doc_id), document=doc_body)
                 
                 return jsonify({
                     "message": "File processed and uploaded to cloud",
@@ -562,7 +789,7 @@ def create_app():
                 
                 # 3. Update DB
                 doc.file_path = filepath
-                doc.status = DocumentStatus.PENDING
+                doc.status = DocumentStatus.pending
                 doc.upload_date = datetime.utcnow()
                 doc.file_size_bytes = os.path.getsize(filepath)
                 doc.title = filename
@@ -622,7 +849,8 @@ def create_app():
                 "view_count": new_view_count,
                 "institution": doc['institutions']['name'] if doc.get('institutions') else "Unknown institution",
                 "institutional_status": doc.get('institutional_status', 'pending'),
-                "authors": authors
+                "authors": authors,
+                "author_names": doc.get('author_names')
             }), 200
         except Exception as e:
             print(f"Error fetching document {doc_id}: {e}")
@@ -633,7 +861,7 @@ def create_app():
         """Return top 6 most-downloaded approved documents"""
         try:
             if os.environ.get('OFFLINE_MODE') == 'true':
-                docs = Document.query.filter_by(status=DocumentStatus.APPROVED).order_by(Document.id.desc()).limit(6).all()
+                docs = Document.query.filter_by(status=DocumentStatus.approved).order_by(Document.id.desc()).limit(6).all()
                 return jsonify([{
                     "id": d.id,
                     "title": d.title,
@@ -651,6 +879,7 @@ def create_app():
                 "id": d['id'],
                 "title": d['title'],
                 "institution": d['institutions']['name'] if d.get('institutions') else "Unknown",
+                "author_names": d.get('author_names'),
                 "download_count": d.get('download_count', 0),
                 "upload_date": d['upload_date']
             } for d in res.data]), 200
@@ -671,6 +900,7 @@ def create_app():
                 "title": d['title'],
                 "abstract": d.get('abstract', ''),
                 "institution": d['institutions']['name'] if d.get('institutions') else "Unknown",
+                "author_names": d.get('author_names'),
                 "upload_date": d['upload_date'],
                 "download_count": d.get('download_count', 0)
             } for d in res.data]), 200
@@ -685,7 +915,7 @@ def create_app():
         doc = Document.query.get_or_404(doc_id)
         if doc.uploader_id != request.user_id:
             return jsonify({"error": "You can only resubmit your own documents"}), 403
-        doc.status = DocumentStatus.PENDING
+        doc.status = DocumentStatus.pending
         doc.moderation_notes = None
         db.session.commit()
         return jsonify({"message": "Document resubmitted for moderation"}), 200
@@ -706,7 +936,7 @@ def create_app():
             if not q:
                 continue
             matches = Document.query.filter(
-                Document.status == DocumentStatus.APPROVED,
+                Document.status == DocumentStatus.approved,
                 Document.upload_date >= cutoff,
                 db.or_(
                     Document.title.ilike(f'%{q}%'),
@@ -839,14 +1069,14 @@ def create_app():
             return jsonify({"error": "This profile has already been claimed"}), 400
         
         # Check if already pending claim
-        existing_claim = AuthorClaim.query.filter_by(user_id=request.user_id, status=DocumentStatus.PENDING).first()
+        existing_claim = AuthorClaim.query.filter_by(user_id=request.user_id, status=DocumentStatus.pending).first()
         if existing_claim:
             return jsonify({"error": "You already have a pending claim"}), 400
             
         new_claim = AuthorClaim(
             document_id=author.documents[0].id if author.documents else 0, # Placeholder or improved logic
             user_id=request.user_id,
-            status=DocumentStatus.PENDING
+            status=DocumentStatus.pending
         )
         # We need a better way to link AuthorClaim to Author. 
         # Let's add author_id to AuthorClaim model if needed, or just use the doc_id.
@@ -866,7 +1096,7 @@ def create_app():
         if request.user_role not in [UserRole.INST_ADMIN.value, UserRole.SYS_ADMIN.value]:
             return jsonify({"error": "Unauthorized"}), 403
             
-        claims = AuthorClaim.query.filter_by(status=DocumentStatus.PENDING).all()
+        claims = AuthorClaim.query.filter_by(status=DocumentStatus.pending).all()
         return jsonify([{
             "id": c.id,
             "user_name": c.user.name,
@@ -889,7 +1119,7 @@ def create_app():
         if author:
             author.user_id = claim.user_id
         
-        claim.status = DocumentStatus.APPROVED
+        claim.status = DocumentStatus.approved
         db.session.commit()
         return jsonify({"message": "Claim approved and author profile linked"}), 200
 
@@ -902,7 +1132,7 @@ def create_app():
             results = []
             for u in users:
                 inst_name = u.institution.name if u.institution else None
-                doc_count = Document.query.filter_by(uploader_id=u.id, status=DocumentStatus.APPROVED).count()
+                doc_count = Document.query.filter_by(uploader_id=u.id, status=DocumentStatus.approved).count()
                 results.append({
                     "id": u.id,
                     "name": u.name,
@@ -939,14 +1169,14 @@ def create_app():
     def get_researcher_stats():
         """Get impact stats for the current researcher"""
         docs = Document.query.filter_by(uploader_id=request.user_id).all()
-        approved = [d for d in docs if d.status == DocumentStatus.APPROVED]
+        approved = [d for d in docs if d.status == DocumentStatus.approved]
         total_downloads = sum(d.download_count or 0 for d in approved)
         total_views = sum(d.view_count or 0 for d in approved)
         most_popular = max(approved, key=lambda d: (d.download_count or 0) + (d.view_count or 0), default=None)
 
         return jsonify({
             "total_publications": len(approved),
-            "pending_publications": len([d for d in docs if d.status == DocumentStatus.PENDING]),
+            "pending_publications": len([d for d in docs if d.status == DocumentStatus.pending]),
             "total_downloads": total_downloads,
             "total_views": total_views,
             "most_popular": {
@@ -964,8 +1194,8 @@ def create_app():
     def get_sysadmin_stats():
         """Get global platform statistics for the System Admin dashboard"""
         total_users = User.query.count()
-        approved_docs = Document.query.filter_by(status=DocumentStatus.APPROVED).count()
-        pending_docs = Document.query.filter_by(status=DocumentStatus.PENDING).count()
+        approved_docs = Document.query.filter_by(status=DocumentStatus.approved).count()
+        pending_docs = Document.query.filter_by(status=DocumentStatus.pending).count()
         total_insts = Institution.query.count()
         
         # Check system health
@@ -1038,7 +1268,7 @@ def create_app():
             # 1. OFFLINE_MODE Bypass
             if os.environ.get('OFFLINE_MODE') == 'true':
                 inst = Institution.query.get_or_404(inst_id)
-                docs = Document.query.filter_by(institution_id=inst_id, status=DocumentStatus.APPROVED).all()
+                docs = Document.query.filter_by(institution_id=inst_id, status=DocumentStatus.approved).all()
                 total_downloads = sum(d.download_count or 0 for d in docs)
                 total_views = sum(d.view_count or 0 for d in docs)
                 active_researchers = db.session.query(Document.uploader_id).filter_by(institution_id=inst_id).distinct().count()
@@ -1089,21 +1319,36 @@ def create_app():
     @app.route('/institutions/my/analytics', methods=['GET'])
     @login_required
     def get_my_institution_analytics():
-        """Convenience endpoint for institutional admins to get their own institution's stats from Cloud"""
+        """Convenience endpoint for institutional admins to get their own institution's stats"""
         try:
             if request.user_role == UserRole.SYS_ADMIN.value:
                 return jsonify({"error": "System Admin should use specific ID route"}), 400
             
+            # Try local DB first (fast, reliable)
+            local_user = User.query.get(request.user_id)
+            if local_user and local_user.institution_id:
+                inst_id = local_user.institution_id
+                inst = Institution.query.get(inst_id)
+                docs = Document.query.filter_by(institution_id=inst_id, status=DocumentStatus.approved).all()
+                total_downloads = sum(d.download_count or 0 for d in docs)
+                total_views = sum(d.view_count or 0 for d in docs)
+                active_researchers = db.session.query(Document.uploader_id).filter_by(institution_id=inst_id).distinct().count()
+                return jsonify({
+                    "institution_name": inst.name if inst else "My Institution",
+                    "total_documents": len(docs),
+                    "total_downloads": total_downloads,
+                    "total_views": total_views,
+                    "active_researchers": active_researchers,
+                    "institution_id": inst_id
+                }), 200
+
+            # Fallback to Supabase
             user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
-            
             if not user_res.data or not user_res.data[0].get('institution_id'):
                 return jsonify({"error": "No institution associated with this user"}), 404
-                
             inst_id = user_res.data[0]['institution_id']
             return get_institution_analytics(inst_id)
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             print(f"DEBUG: get_my_institution_analytics_route error: {e}")
             return jsonify({"error": str(e)}), 500
 
@@ -1111,34 +1356,31 @@ def create_app():
     @login_required
     @role_required(UserRole.INST_ADMIN.value)
     def get_my_institution_pending():
-        """Get pending documents for the admin's institution (Cloud or Local)"""
+        """Get pending documents for the admin's institution (Local-first with Cloud fallback)"""
         try:
-            # 1. OFFLINE_MODE Bypass
-            if os.environ.get('OFFLINE_MODE') == 'true':
-                user = User.query.get(request.user_id)
-                if not user or not user.institution_id:
-                    return jsonify({"error": "No institution associated"}), 404
-                
-                docs = Document.query.filter_by(institution_id=user.institution_id, status=DocumentStatus.PENDING).all()
+            # Local-first: fast and immune to transient Supabase socket errors
+            local_user = User.query.get(request.user_id)
+            if local_user and local_user.institution_id:
+                docs = Document.query.filter_by(
+                    institution_id=local_user.institution_id,
+                    status=DocumentStatus.pending
+                ).all()
                 return jsonify([{
                     "id": d.id,
                     "title": d.title,
                     "abstract": d.abstract or '',
                     "upload_date": d.upload_date.isoformat() if d.upload_date else None,
-                    "uploader_name": d.uploader.name if d.uploader else "Unknown"
+                    "uploader_name": d.uploader.name if hasattr(d, 'uploader') and d.uploader else "Unknown"
                 } for d in docs]), 200
 
-            # 2. Cloud Path
+            # Fallback to Cloud
             user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
             if not user_res.data or not user_res.data[0].get('institution_id'):
                 return jsonify({"error": "No institution associated"}), 404
-                
             inst_id = user_res.data[0]['institution_id']
-            
             pending_docs_res = supabase.table("documents").select(
                 "id, title, abstract, upload_date, uploader_id"
             ).eq("institution_id", inst_id).eq("status", "pending").execute()
-            
             results = [{
                 "id": d['id'],
                 "title": d['title'],
@@ -1146,7 +1388,6 @@ def create_app():
                 "upload_date": d.get('upload_date'),
                 "uploader_name": "User " + str(d.get('uploader_id', 'unknown'))[:8]
             } for d in (pending_docs_res.data or [])]
-            
             return jsonify(results), 200
         except Exception as e:
             print(f"Pending fetch error: {e}")
@@ -1265,14 +1506,14 @@ def create_app():
     @login_required
     @role_required(UserRole.INST_ADMIN.value)
     def get_my_institution_documents():
-        """Get all documents for the admin's institution (Cloud or Local)"""
+        """Get all documents for the admin's institution (Local-first with Cloud fallback)"""
         try:
-            # 1. OFFLINE_MODE Bypass
-            if os.environ.get('OFFLINE_MODE') == 'true':
-                user = User.query.get(request.user_id)
-                if not user or not user.institution_id:
-                    return jsonify({"error": "No institution associated"}), 404
-                docs = Document.query.filter_by(institution_id=user.institution_id).order_by(Document.upload_date.desc()).all()
+            # Local-first: immune to transient Supabase socket errors
+            local_user = User.query.get(request.user_id)
+            if local_user and local_user.institution_id:
+                docs = Document.query.filter_by(
+                    institution_id=local_user.institution_id
+                ).order_by(Document.upload_date.desc()).all()
                 return jsonify([{
                     "id": d.id,
                     "title": d.title,
@@ -1283,7 +1524,7 @@ def create_app():
                     "download_count": d.download_count or 0
                 } for d in docs]), 200
 
-            # 2. Cloud Path
+            # Fallback to Cloud
             user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
             if not user_res.data or not user_res.data[0].get('institution_id'):
                 return jsonify({"error": "No institution associated"}), 404
@@ -1294,6 +1535,49 @@ def create_app():
             return jsonify(docs_res.data or []), 200
         except Exception as e:
             print(f"Documents fetch error: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/documents/<doc_id>/institutional-verify', methods=['POST'])
+    @login_required
+    @role_required(UserRole.INST_ADMIN.value)
+    def institutional_verify_document(doc_id):
+        """Institution admin verifies or rejects a document"""
+        try:
+            user_res = supabase.table("users").select("institution_id").eq("id", request.user_id).execute()
+            if not user_res.data or not user_res.data[0].get('institution_id'):
+                return jsonify({"error": "No institution associated"}), 404
+            inst_id = user_res.data[0]['institution_id']
+            
+            data = request.get_json()
+            status_action = data.get('status')
+            
+            from models import Document, InstitutionalStatus, DocumentStatus
+            is_approved = (status_action == 'approved')
+            new_inst_status_enum = InstitutionalStatus.verified if is_approved else InstitutionalStatus.rejected
+            # When verified → set main status to APPROVED (removes from pending list, signals researcher)
+            # When rejected → set main status to REJECTED
+            new_doc_status_enum = DocumentStatus.approved if is_approved else DocumentStatus.rejected
+            
+            # Update local DB (doc_id arrives as string from URL, cast to int)
+            doc = db.session.get(Document, int(doc_id))
+            if doc:
+                if doc.institution_id != int(inst_id):
+                    return jsonify({"error": "Unauthorized to verify this document"}), 403
+                doc.institutional_status = new_inst_status_enum
+                doc.status = new_doc_status_enum
+                db.session.commit()
+            
+            # Update Cloud — Supabase needs lowercase enum values (.value)
+            cloud_update = {
+                "institutional_status": new_inst_status_enum.value,
+                "status": new_doc_status_enum.value
+            }
+            supabase.table("documents").update(cloud_update).eq("id", doc_id).eq("institution_id", inst_id).execute()
+            
+            return jsonify({"message": f"Document {new_inst_status_enum.value}"}), 200
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
             return jsonify({"error": str(e)}), 500
 
     @app.route('/institutions/my/members', methods=['GET'])
@@ -1347,21 +1631,32 @@ def create_app():
             for r in reqs:
                 u_name = "Unknown"
                 u_email = ""
+                u_occupation = ""
+                u_interests = ""
+                u_photo = ""
                 if r.user:
                     u_name = r.user.name
                     u_email = r.user.email
+                    u_occupation = r.user.occupation or ""
+                    u_interests = r.user.research_interests or ""
+                    u_photo = r.user.photo_url or ""
                 else:
                     try:
-                        u_res = supabase.table("users").select("name, email").eq("id", r.user_id).execute()
+                        u_res = supabase.table("users").select("name, email, occupation, photo_url").eq("id", r.user_id).execute()
                         if u_res.data:
                             u_name = u_res.data[0].get('name', 'Unknown')
                             u_email = u_res.data[0].get('email', '')
+                            u_occupation = u_res.data[0].get('occupation', '')
+                            u_photo = u_res.data[0].get('photo_url', '')
                     except: pass
                 results.append({
                     "id": r.id,
                     "user_id": r.user_id,
                     "user_name": u_name,
                     "user_email": u_email,
+                    "occupation": u_occupation,
+                    "research_interests": u_interests,
+                    "photo_url": u_photo,
                     "created_at": r.created_at.isoformat()
                 })
             return jsonify(results), 200
@@ -1387,6 +1682,14 @@ def create_app():
                 return jsonify({"error": "Request not found or not for your institution"}), 404
             # Approve: mark request approved, set user institution + verified
             req.status = 'approved'
+            
+            # Update user in local DB
+            local_user = User.query.get(req.user_id)
+            if local_user:
+                local_user.institution_id = inst_id
+                local_user.is_verified = True
+                local_user.role = UserRole.RESEARCHER
+                
             db.session.commit()
             
             # Update user in Cloud (since users live in Cloud)
@@ -1501,6 +1804,7 @@ def create_app():
                      "title": doc['title'],
                      "abstract": doc['abstract'],
                      "upload_date": doc['upload_date'],
+                     "author_names": doc.get('author_names'),
                      "institution": doc['institutions']['name'] if doc.get('institutions') else "Unknown",
                      "authors": doc.get('authors', [])
                  } for doc in res.data]
@@ -1581,6 +1885,7 @@ def create_app():
                 "title": doc['title'],
                 "abstract": doc['abstract'],
                 "upload_date": doc['upload_date'],
+                "author_names": doc.get('author_names'),
                 "institution": doc['institutions']['name'] if doc.get('institutions') else "Unknown",
                 "authors": doc.get('authors', [])
             } for doc in filtered_docs])
@@ -1626,7 +1931,7 @@ def create_app():
                         recommendations = []
                         for hit in hits:
                             recommended_doc = Document.query.get(int(hit['_id']))
-                            if recommended_doc and recommended_doc.status == DocumentStatus.APPROVED:
+                            if recommended_doc and recommended_doc.status == DocumentStatus.approved:
                                 recommendations.append({
                                     "source": "elasticsearch",
                                     "id": recommended_doc.id,
@@ -1642,7 +1947,7 @@ def create_app():
             
             # 3. Fallback to Database + TF-IDF (Slow)
             print("Using Database Fallback for Recommendations")
-            all_docs = Document.query.filter(Document.status == DocumentStatus.APPROVED).all()
+            all_docs = Document.query.filter(Document.status == DocumentStatus.approved).all()
             
             if len(all_docs) < 2:
                 return jsonify([])  # Not enough documents to recommend
@@ -1714,12 +2019,12 @@ def create_app():
             # Always show non-institutional documents to global admins
             user = User.query.get(request.user_id)
             # Global Sys Admin - sees ALL pending documents
-            pending_docs = Document.query.filter_by(status=DocumentStatus.PENDING).all()
+            pending_docs = Document.query.filter_by(status=DocumentStatus.pending).all()
         elif user_role == UserRole.INST_ADMIN.value:
             user = User.query.get(request.user_id)
             if user and user.institution_id:
                 # Institutional Admin - Sees documents for their institution
-                pending_docs = Document.query.filter_by(status=DocumentStatus.PENDING, institution_id=user.institution_id).all()
+                pending_docs = Document.query.filter_by(status=DocumentStatus.pending, institution_id=user.institution_id).all()
             else:
                 return jsonify({"error": "No institution associated"}), 403
         else:
@@ -1750,9 +2055,9 @@ def create_app():
         
         doc = Document.query.get_or_404(doc_id)
         valid_statuses = {
-            'approved': DocumentStatus.APPROVED,
-            'rejected': DocumentStatus.REJECTED,
-            'revision_requested': DocumentStatus.PENDING # Or a new enum if we had one
+            'approved': DocumentStatus.approved,
+            'rejected': DocumentStatus.rejected,
+            'revision_requested': DocumentStatus.pending # Or a new enum if we had one
         }
         
         # Note: In models.py, DocumentStatus only has PENDING, APPROVED, REJECTED.
@@ -1760,7 +2065,7 @@ def create_app():
         # To avoid enum errors, let's map them.
         
         if status_str in ['approved', 'rejected']:
-             doc.status = DocumentStatus.APPROVED if status_str == 'approved' else DocumentStatus.REJECTED
+             doc.status = DocumentStatus.approved if status_str == 'approved' else DocumentStatus.rejected
         # Note: revision_requested isn't in the enum, but we can store it in notes or use a workaround.
         # Let's assume we want to support it properly. 
         # For now, keeping it simple to avoid breaking models.py.
@@ -2109,100 +2414,11 @@ def create_app():
         
         return jsonify([{"topic": t, "popularity": c} for t, c in trending]), 200
 
-    # ========== SAVED SEARCHES & ALERTS ENDPOINTS ==========
+    # Saved search management logic consolidated above.
 
-    @app.route('/saved-searches', methods=['POST'])
-    @login_required
-    def save_search():
-        """Save a search query for a user"""
-        data = request.get_json()
-        query = data.get('query')
-        
-        if not query:
-            return jsonify({"error": "Search query is required"}), 400
-            
-        new_save = SavedSearch(
-            user_id=request.user_id,
-            query=query
-        )
-        
-        db.session.add(new_save)
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Search query saved",
-            "saved_search": {
-                "id": new_save.id,
-                "query": new_save.query,
-                "created_at": new_save.created_at.isoformat()
-            }
-        }), 201
 
-    @app.route('/saved-searches', methods=['GET'])
-    @login_required
-    def get_saved_searches():
-        """Retrieve a user's saved searches with alert counts"""
-        saved = SavedSearch.query.filter_by(user_id=request.user_id).all()
-        
-        results = []
-        from sqlalchemy import or_
-        
-        for s in saved:
-            # Simple Alert Logic: How many approved documents were added after last_checked_at 
-            # that match this query string?
-            alert_count = Document.query.filter(
-                Document.status == DocumentStatus.APPROVED,
-                Document.upload_date > s.last_checked_at,
-                or_(
-                    Document.title.ilike(f'%{s.query}%'),
-                    Document.abstract.ilike(f'%{s.query}%')
-                )
-            ).count()
-            
-            results.append({
-                "id": s.id,
-                "query": s.query,
-                "created_at": s.created_at.isoformat(),
-                "alert_count": alert_count
-            })
-            
-        return jsonify(results), 200
+    # Consolidated researcher and affiliation routes moved to higher section in file.
 
-    @app.route('/saved-searches/<int:search_id>/clear-alerts', methods=['POST'])
-    @login_required
-    def clear_alerts(search_id):
-        """Clear alerts for a saved search by updating last_checked_at"""
-        s = SavedSearch.query.filter_by(id=search_id, user_id=request.user_id).first_or_404()
-        s.last_checked_at = datetime.utcnow()
-        db.session.commit()
-        return jsonify({"message": "Alerts cleared"}), 200
-
-    @app.route('/saved-searches/<int:search_id>', methods=['DELETE'])
-    @login_required
-    def delete_saved_search(search_id):
-        """Delete a saved search"""
-        # Security: only owner can delete
-        s = SavedSearch.query.filter_by(id=search_id, user_id=request.user_id).first_or_404()
-        db.session.delete(s)
-        db.session.commit()
-        return jsonify({"message": "Saved search deleted"}), 200
-
-    # ========== INSTITUTIONAL GOVERNANCE & CLAIMS (CONSOLIDATED) ==========
-    # Verification and claim logic have been moved to moderated sections above.
-
-    @app.route('/authors/me', methods=['GET'])
-    @login_required
-    def get_my_author_profile():
-        """Get the author profile linked to the current logged-in user"""
-        author = Author.query.filter_by(user_id=request.user_id).first()
-        if not author:
-            return jsonify({"message": "No author profile linked"}), 404
-            
-        return jsonify({
-            "id": author.id,
-            "name": author.name,
-            "affiliation": author.institution.name if author.institution else None
-        }), 200
 
     # ========== INSTITUTION AFFILIATION ENDPOINTS ==========
 
@@ -2433,11 +2649,23 @@ def create_app():
                     file_uuid = uuid.uuid4().hex[:8]
                     storage_path = f"{inst_folder}/{file_uuid}_{filename}"
                     
+                    # 9. Sync Authors
+                    extracted_authors = doc_full.get('authors', [])
+                    final_authors = extracted_authors.copy()
+                    
+                    # Always include the uploader's name as an author if not already present
+                    uploader_name = user_data.get('name') if 'user_data' in locals() else None
+                    if not uploader_name and user_res.data:
+                        uploader_name = user_res.data[0].get('name')
+                        
+                    if uploader_name and uploader_name not in final_authors:
+                        final_authors.append(uploader_name)
+
                     # Metadata for Cloud 
                     doc_metadata = {
                         "title": doc_full['title'],
                         "abstract": doc_full['abstract'],
-                        "author_names": ', '.join(doc_full['authors']) if doc_full.get('authors') else "",
+                        "author_names": ', '.join(final_authors),
                         "file_size_bytes": file_size,
                         "institution_id": inst_id,
                         "publication_date": f"{doc_full['year']}-01-01" if doc_full.get('year') else None,
@@ -2461,19 +2689,17 @@ def create_app():
                     # Push to Elasticsearch
                     if es and es.ping():
                         try:
-                            # Use current year for bulk uploads if no year extraction logic is present
-                            # To be perfectly robust, we extract year if available, else use current
                             from datetime import datetime
                             es.index(index=INDEX_NAME, id=str(new_doc_id), document={
                                 "title": doc_full['title'],
                                 "abstract": doc_full['abstract'],
-                                "full_text": cleaned_text[:50000] if cleaned_text else "", # Limit to prevent ES bloat
+                                "full_text": cleaned_text[:50000] if cleaned_text else "", 
                                 "keywords": keywords,
                                 "topics": topics,
                                 "institution_id": inst_id,
                                 "institution_name": inst_name if 'inst_name' in locals() else "Unknown",
                                 "year": doc_full['year'],
-                                "authors": doc_full['authors'],
+                                "authors": final_authors,
                                 "upload_date": datetime.utcnow().isoformat(),
                                 "is_institutional": True,
                                 "status": "approved"
@@ -2491,16 +2717,16 @@ def create_app():
                             publication_date=datetime(doc_full['year'], 1, 1) if doc_full.get('year') else None,
                             institution_id=inst_id,
                             uploader_id=request.user_id,
+                            author_names=", ".join(final_authors),
                             is_institutional=True,
-                            status=DocumentStatus.APPROVED,
+                            status=DocumentStatus.approved,
                             file_path=storage_path
                         )
                         db.session.add(new_doc)
                         db.session.commit()
                         
-                        # Sync Authors
-                        if doc_full['authors']:
-                            sync_authors_to_doc(new_doc_id, doc_full['authors'])
+                        if final_authors:
+                            sync_authors_to_doc(new_doc_id, final_authors)
                     except Exception as e:
                         db.session.rollback()
                         print(f"Local DB sync warning during bulk upload: {e}")

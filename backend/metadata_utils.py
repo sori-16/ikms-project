@@ -1,3 +1,7 @@
+"""
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+"""
 import re
 import fitz # PyMuPDF
 from datetime import datetime

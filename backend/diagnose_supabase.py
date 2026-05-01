@@ -1,3 +1,7 @@
+"""
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+"""
 import os
 from supabase_client import supabase
 

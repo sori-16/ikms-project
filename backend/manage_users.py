@@ -1,4 +1,8 @@
 """
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+"""
+"""
 IKMS User Management CLI
 Allows creating and managing administrative and researcher accounts.
 """

@@ -25,14 +25,14 @@ class UserRole(enum.Enum):
     SYS_ADMIN = 'sys_admin'
 
 class DocumentStatus(enum.Enum):
-    PENDING = 'pending'
-    APPROVED = 'approved'
-    REJECTED = 'rejected'
+    pending = 'pending'
+    approved = 'approved'
+    rejected = 'rejected'
 
 class InstitutionalStatus(enum.Enum):
-    PENDING = 'pending'
-    VERIFIED = 'verified'
-    REJECTED = 'rejected'
+    pending = 'pending'
+    verified = 'verified'
+    rejected = 'rejected'
 
 # Association Table for Many-to-Many relationship between Documents and Authors
 document_authors = db.Table('document_authors',
@@ -109,8 +109,8 @@ class Document(db.Model):
     upload_date = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Analytics & Workflow
-    status = db.Column(db.Enum(DocumentStatus), default=DocumentStatus.PENDING)
-    institutional_status = db.Column(db.Enum(InstitutionalStatus), default=InstitutionalStatus.PENDING)
+    status = db.Column(db.Enum(DocumentStatus), default=DocumentStatus.pending)
+    institutional_status = db.Column(db.Enum(InstitutionalStatus), default=InstitutionalStatus.pending)
     publication_date = db.Column(db.DateTime)
     download_count = db.Column(db.Integer, default=0)
     view_count = db.Column(db.Integer, default=0)
@@ -189,7 +189,7 @@ class AuthorClaim(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
     user_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
-    status = db.Column(db.Enum(DocumentStatus), default=DocumentStatus.PENDING)
+    status = db.Column(db.Enum(DocumentStatus), default=DocumentStatus.pending)
     moderation_notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     

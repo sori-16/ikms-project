@@ -1,3 +1,7 @@
+"""
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+"""
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 import os

@@ -1,3 +1,7 @@
+"""
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+"""
 from functools import wraps
 from flask import request, jsonify
 from supabase_client import supabase

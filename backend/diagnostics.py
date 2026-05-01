@@ -1,4 +1,8 @@
 """
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+"""
+"""
 IKMS Unified Diagnostic Tool
 Created by: Antigravity AI
 Consolidates previous connection and network test scripts.

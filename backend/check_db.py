@@ -1,3 +1,7 @@
+"""
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+"""
 import sqlite3
 
 def check_db():

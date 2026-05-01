@@ -1,4 +1,8 @@
 """
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+"""
+"""
 IKMS Database Clear Tool
 Safely resets the local and cloud databases to a blank state.
 """

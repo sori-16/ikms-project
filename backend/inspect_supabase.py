@@ -1,3 +1,7 @@
+"""
+Created by: Soreti (Team Leader)
+DO NOT MODIFY WITHOUT PERMISSION
+"""
 import os
 from supabase import create_client, Client
 from dotenv import load_dotenv
